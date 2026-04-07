@@ -36,11 +36,19 @@ PlotWidget::PlotWidget(QWidget *parent)
 
     // QGroupBox stylesheet for dark theme
     const QString groupStyle = QString(
-        "QGroupBox { border: 1px solid %1; border-radius: 4px;"
-        " margin-top: 10px; padding: 6px 6px 4px 6px; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 8px;"
-        " padding: 0 4px; color: %2; font-weight: bold; font-size: %3px; }")
-        .arg(Style::Color::PanelBorder, Style::Color::AccentAmber)
+        "QGroupBox { border: 1px solid %1; border-radius: %2px;"
+        " margin-top: %3px; padding: %4px %5px %6px %5px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: %7px;"
+        " padding: 0 %8px; color: %9; font-weight: bold; font-size: %10px; }")
+        .arg(Style::Color::PanelBorder)
+        .arg(Style::Layout::GroupBoxRadius)
+        .arg(Style::Layout::GroupBoxMarginTop)
+        .arg(Style::Layout::GroupBoxPadTop)
+        .arg(Style::Layout::GroupBoxPadH)
+        .arg(Style::Layout::GroupBoxPadBottom)
+        .arg(Style::Layout::GroupBoxTitleLeft)
+        .arg(Style::Layout::GroupBoxTitlePadH)
+        .arg(Style::Color::AccentAmber)
         .arg(Style::Font::Medium);
 
     // Display mode combo as chart title (centered above chart)
@@ -149,7 +157,7 @@ PlotWidget::PlotWidget(QWidget *parent)
         QFont vf(Style::Font::Monospace); vf.setPixelSize(Style::Font::Medium); vf.setBold(true);
         label->setFont(vf);
         label->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
-        label->setMinimumWidth(36);
+        label->setMinimumWidth(Style::Layout::PlotReadoutMinW);
         readoutRow->addWidget(label);
     };
     addReadout("Freq", m_freqLabel);
@@ -460,7 +468,7 @@ void PlotWidget::createControls() {
     comboFont.setBold(true);
     m_displayCombo->setFont(comboFont);
 
-    m_displayCombo->setMinimumWidth(220);
+    m_displayCombo->setMinimumWidth(Style::Layout::PlotDisplayComboMinW);
     m_displayCombo->setStyleSheet(QString(
         "QComboBox { background: %1; color: %2; border: 1px solid %3;"
         " border-radius: 4px; padding: 2px 8px; }"
@@ -516,7 +524,7 @@ void PlotWidget::createControls() {
     m_rigCombo = new QComboBox;
     m_rigCombo->setEditable(true);
     m_rigCombo->setInsertPolicy(QComboBox::NoInsert);
-    m_rigCombo->setMinimumWidth(140);
+    m_rigCombo->setMinimumWidth(Style::Layout::PlotRigComboMinW);
     // Populate rig list
     auto rigs = HamlibRig::availableRigs();
     for (const auto &rig : rigs) {
@@ -533,7 +541,7 @@ void PlotWidget::createControls() {
 
     m_rigPortCombo = new QComboBox;
     m_rigPortCombo->setEditable(true);
-    m_rigPortCombo->setMinimumWidth(160);
+    m_rigPortCombo->setMinimumWidth(Style::Layout::PlotPortComboMinW);
     for (const auto &port : SerialTransport::availablePorts())
         m_rigPortCombo->addItem(port);
 

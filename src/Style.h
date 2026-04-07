@@ -130,6 +130,21 @@ namespace Layout {
     constexpr int VCPStandardH    = 200;
     constexpr int PlotDefaultW    = 700;
     constexpr int PlotDefaultH    = 600;
+
+    // GroupBox styling (used in PlotWidget section groups)
+    constexpr int GroupBoxMarginTop  = 10;
+    constexpr int GroupBoxPadH       = 6;
+    constexpr int GroupBoxPadTop     = 6;
+    constexpr int GroupBoxPadBottom  = 4;
+    constexpr int GroupBoxRadius     = 4;
+    constexpr int GroupBoxTitleLeft  = 8;
+    constexpr int GroupBoxTitlePadH  = 4;
+
+    // Plot widget minimum widths
+    constexpr int PlotReadoutMinW      = 36;
+    constexpr int PlotDisplayComboMinW = 220;
+    constexpr int PlotRigComboMinW     = 140;
+    constexpr int PlotPortComboMinW    = 160;
 }
 
 // =============================================================================

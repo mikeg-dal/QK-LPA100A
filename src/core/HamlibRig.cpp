@@ -10,6 +10,7 @@ static struct HamlibDebugInit {
         rig_set_debug(RIG_DEBUG_NONE);
         static FILE *devnull = fopen("/dev/null", "w");
         if (devnull) rig_set_debug_file(devnull);
+        rig_load_all_backends();
     }
 } s_hamlibDebugInit;
 
@@ -44,7 +45,6 @@ HamlibRig::~HamlibRig() {
 
 QList<HamlibRig::RigInfo> HamlibRig::availableRigs() {
     QList<RigInfo> rigs;
-    rig_load_all_backends();
     rig_list_foreach(rigListCallback, &rigs);
 
     // Sort by manufacturer then model
