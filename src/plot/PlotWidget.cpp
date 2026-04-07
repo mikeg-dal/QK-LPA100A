@@ -10,6 +10,7 @@
 #include <QSettings>
 #include <QApplication>
 #include <QLineEdit>
+#include <QCloseEvent>
 #include <cmath>
 
 PlotWidget::PlotWidget(QWidget *parent)
@@ -189,7 +190,7 @@ PlotWidget::PlotWidget(QWidget *parent)
         params.settleTimeMs = m_settleCombo->currentData().toInt();
         params.sampleTimeMs = m_sampleCombo->currentData().toInt();
         params.txMode = m_txModeCombo->currentText();
-        params.rfPower = m_powerSpin->value();
+        params.rfPower = m_powerSpin->value() / 100.0;  // UI shows %, Hamlib wants 0.0-1.0
 
         m_sweepEngine = new SweepEngine(m_rig, m_lp100a, this);
         connect(m_sweepEngine, &SweepEngine::pointMeasured, this, [this](const SweepPoint &pt) {
@@ -218,9 +219,71 @@ PlotWidget::PlotWidget(QWidget *parent)
     });
 
     connect(m_resetBtn, &QPushButton::clicked, this, [this]() {
-        m_data.clear(); updateChart();
+        m_data.clear(); updateChart(); saveSettings();
         m_statusLabel->setText("Ready");
     });
+
+    // Restore saved settings
+    loadSettings();
+}
+
+void PlotWidget::closeEvent(QCloseEvent *event) {
+    saveSettings();
+    QWidget::closeEvent(event);
+}
+
+void PlotWidget::setLP100A(LP100AProtocol *lp100a) {
+    if (m_lp100a) {
+        disconnect(m_lp100a, nullptr, m_rawLabel, nullptr);
+    }
+    m_lp100a = lp100a;
+    if (m_lp100a) {
+        connect(m_lp100a, &LP100AProtocol::rawResponse, m_rawLabel, &QLabel::setText);
+    }
+}
+
+void PlotWidget::saveSettings() {
+    QSettings s("AI5QK", "QK-LP100A");
+    s.setValue("plot/startFreq", m_startFreq->value());
+    s.setValue("plot/stopFreq", m_stopFreq->value());
+    s.setValue("plot/stepIdx", m_stepCombo->currentIndex());
+    s.setValue("plot/displayIdx", m_displayCombo->currentIndex());
+    s.setValue("plot/sampleIdx", m_sampleCombo->currentIndex());
+    s.setValue("plot/settleIdx", m_settleCombo->currentIndex());
+    s.setValue("plot/txMode", m_txModeCombo->currentText());
+    s.setValue("plot/rfPowerPct", m_powerSpin->value());
+    s.setValue("plot/sign", m_signCheck->isChecked());
+    s.setValue("plot/spline", m_splineCheck->isChecked());
+    s.setValue("plot/bestFit", m_bestFitCheck->isChecked());
+    s.setValue("plot/rigIdx", m_rigCombo->currentIndex());
+    s.setValue("plot/rigPort", m_rigPortCombo->currentText());
+    s.setValue("plot/rigBaud", m_rigBaudCombo->currentText());
+}
+
+void PlotWidget::loadSettings() {
+    QSettings s("AI5QK", "QK-LP100A");
+    m_startFreq->setValue(s.value("plot/startFreq", 28.0).toDouble());
+    m_stopFreq->setValue(s.value("plot/stopFreq", 29.7).toDouble());
+    m_stepCombo->setCurrentIndex(s.value("plot/stepIdx", 2).toInt());
+    m_displayCombo->setCurrentIndex(s.value("plot/displayIdx", 2).toInt());
+    m_sampleCombo->setCurrentIndex(s.value("plot/sampleIdx", 2).toInt());
+    m_settleCombo->setCurrentIndex(s.value("plot/settleIdx", 3).toInt());
+    m_txModeCombo->setCurrentText(s.value("plot/txMode", "CW").toString());
+    m_powerSpin->setValue(s.value("plot/rfPowerPct", 10).toDouble());
+    m_signCheck->setChecked(s.value("plot/sign", true).toBool());
+    m_splineCheck->setChecked(s.value("plot/spline", false).toBool());
+    m_bestFitCheck->setChecked(s.value("plot/bestFit", false).toBool());
+
+    int rigIdx = s.value("plot/rigIdx", -1).toInt();
+    if (rigIdx >= 0 && rigIdx < m_rigCombo->count())
+        m_rigCombo->setCurrentIndex(rigIdx);
+
+    QString rigPort = s.value("plot/rigPort", "").toString();
+    if (!rigPort.isEmpty())
+        m_rigPortCombo->setCurrentText(rigPort);
+
+    QString rigBaud = s.value("plot/rigBaud", "38400").toString();
+    m_rigBaudCombo->setCurrentText(rigBaud);
 }
 
 void PlotWidget::createControls() {
@@ -237,13 +300,16 @@ void PlotWidget::createControls() {
     m_stopFreq->setValue(29.7);
 
     m_stepCombo = new QComboBox;
+    m_stepCombo->addItem("1 kHz", 1);
+    m_stepCombo->addItem("2 kHz", 2);
+    m_stepCombo->addItem("5 kHz", 5);
     m_stepCombo->addItem("10 kHz", 10);
     m_stepCombo->addItem("25 kHz", 25);
     m_stepCombo->addItem("50 kHz", 50);
     m_stepCombo->addItem("100 kHz", 100);
     m_stepCombo->addItem("200 kHz", 200);
     m_stepCombo->addItem("500 kHz", 500);
-    m_stepCombo->setCurrentIndex(2);
+    m_stepCombo->setCurrentIndex(5); // 50 kHz default
 
     m_displayCombo = new QComboBox;
     m_displayCombo->addItem("R+jX", RplusJX);
@@ -320,11 +386,11 @@ void PlotWidget::createControls() {
     m_rigBaudCombo->setCurrentText("38400");
 
     m_powerSpin = new QDoubleSpinBox;
-    m_powerSpin->setRange(0.01, 1.0);
-    m_powerSpin->setSingleStep(0.05);
-    m_powerSpin->setValue(0.10);
-    m_powerSpin->setDecimals(2);
-    m_powerSpin->setPrefix("Pwr ");
+    m_powerSpin->setRange(1, 100);
+    m_powerSpin->setSingleStep(5);
+    m_powerSpin->setValue(10);
+    m_powerSpin->setDecimals(0);
+    m_powerSpin->setSuffix("% Pwr");
 
     m_rigConnectBtn = new QPushButton("Connect Rig");
     m_rigConnectBtn->setStyleSheet(Style::buttonCompact());
@@ -348,7 +414,7 @@ void PlotWidget::createChart() {
 
     m_axisX = new QValueAxis;
     m_axisX->setTitleText("Frequency - MHz");
-    m_axisX->setLabelFormat("%.1f");
+    m_axisX->setLabelFormat("%.3f");
     m_axisX->setRange(28.0, 29.8);
     m_axisX->setGridLineColor(QColor(Style::Color::PanelBorder));
     m_axisX->setLabelsColor(QColor(Style::Color::TextGray));
@@ -427,12 +493,20 @@ void PlotWidget::updateChart() {
             m_chart->setTitle("Smith Chart"); break;
     }
 
-    m_axisX->setRange(m_startFreq->value(), m_stopFreq->value());
-    if (m_data.isEmpty()) return;
+    double fMin = m_startFreq->value();
+    double fMax = m_stopFreq->value();
 
-    double fMin = m_data.at(0).freqMHz;
-    double fMax = m_data.at(m_data.count() - 1).freqMHz;
-    m_axisX->setRange(fMin - 0.05, fMax + 0.05);
+    if (!m_data.isEmpty()) {
+        fMin = m_data.at(0).freqMHz;
+        fMax = m_data.at(m_data.count() - 1).freqMHz;
+    }
+
+    m_axisX->setLabelFormat("%.3f");  // Always kHz resolution for ham radio
+    double stepMHz = stepKHz() / 1000.0;
+    double pad = qMax(0.005, stepMHz / 2.0);  // Pad by half a step
+    m_axisX->setRange(fMin - pad, fMax + pad);
+
+    if (m_data.isEmpty()) return;
 
     switch (m_displayMode) {
         case SwrMode:     plotSWR(); break;

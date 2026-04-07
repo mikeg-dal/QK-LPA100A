@@ -2,6 +2,7 @@
 #include "core/HamlibRig.h"
 #include "core/LP100AProtocol.h"
 #include <QTimer>
+#include <cmath>
 
 SweepEngine::SweepEngine(HamlibRig *rig, LP100AProtocol *lp100a, QObject *parent)
     : QObject(parent)
@@ -25,6 +26,12 @@ void SweepEngine::start(const SweepParams &params) {
     m_stopRequested = false;
     m_running = true;
 
+    // Save current rig state to restore after sweep
+    m_savedFreqHz = m_rig->getFrequency();
+    m_savedMode = m_rig->getMode();
+    emit logMessage(QString("Saved rig state: %1 Hz, mode %2")
+        .arg(m_savedFreqHz, 0, 'f', 0).arg(m_savedMode));
+
     // Set mode and power on the rig BEFORE starting sweep
     emit logMessage(QString("Setting mode: %1").arg(m_params.txMode));
     if (!m_rig->setMode(m_params.txMode)) {
@@ -36,16 +43,17 @@ void SweepEngine::start(const SweepParams &params) {
         emit logMessage("WARNING: Failed to set RF power: " + m_rig->errorString());
     }
 
-    // Calculate steps (adds 1 kHz margin to start/stop per LP-100A manual)
-    double actualStart = params.startMHz + 0.001;
-    double actualStop = params.stopMHz - 0.001;
-    m_totalSteps = static_cast<int>((actualStop - actualStart) / (params.stepKHz / 1000.0)) + 1;
-    m_currentStep = 0;
-    m_currentFreqMHz = actualStart;
+    // Use integer Hz to avoid floating point drift
+    m_startHz = static_cast<qint64>(params.startMHz * 1e6);
+    m_stopHz  = static_cast<qint64>(params.stopMHz * 1e6);
+    m_stepHz  = static_cast<qint64>(params.stepKHz * 1000);
 
-    emit logMessage(QString("Sweep: %1-%2 MHz, step %3 kHz, %4 points")
-        .arg(actualStart, 0, 'f', 3).arg(actualStop, 0, 'f', 3)
-        .arg(params.stepKHz).arg(m_totalSteps));
+    m_totalSteps = static_cast<int>((m_stopHz - m_startHz) / m_stepHz) + 1;
+    m_currentStep = 0;
+    m_currentFreqHz = m_startHz;
+
+    emit logMessage(QString("Sweep: %1-%2 Hz, step %3 Hz, %4 points")
+        .arg(m_startHz).arg(m_stopHz).arg(m_stepHz).arg(m_totalSteps));
     emit logMessage(QString("Settle: %1ms, Sample: %2ms")
         .arg(params.settleTimeMs).arg(params.sampleTimeMs));
 
@@ -66,21 +74,31 @@ void SweepEngine::nextStep() {
         m_stopRequested = false;
         if (m_rig && m_rig->isOpen()) {
             m_rig->setPTT(false);
+
+            // Restore rig to original frequency and mode
+            if (m_savedFreqHz > 0) {
+                m_rig->setFrequency(m_savedFreqHz);
+                emit logMessage(QString("Restored freq: %1 Hz").arg(m_savedFreqHz, 0, 'f', 0));
+            }
+            if (!m_savedMode.isEmpty()) {
+                m_rig->setMode(m_savedMode);
+                emit logMessage(QString("Restored mode: %1").arg(m_savedMode));
+            }
         }
         emit logMessage("Sweep complete");
         emit sweepFinished();
         return;
     }
 
-    emit progress(m_currentStep + 1, m_totalSteps, m_currentFreqMHz);
+    double freqMHz = m_currentFreqHz / 1e6;
+    emit progress(m_currentStep + 1, m_totalSteps, freqMHz);
 
     // Step 1: Set frequency
-    double freqHz = m_currentFreqMHz * 1e6;
-    emit logMessage(QString("Step %1/%2: Set freq %3 MHz")
+    emit logMessage(QString("Step %1/%2: Set freq %3 MHz (%4 Hz)")
         .arg(m_currentStep + 1).arg(m_totalSteps)
-        .arg(m_currentFreqMHz, 0, 'f', 3));
+        .arg(freqMHz, 0, 'f', 3).arg(m_currentFreqHz));
 
-    if (!m_rig->setFrequency(freqHz)) {
+    if (!m_rig->setFrequency(static_cast<double>(m_currentFreqHz))) {
         emit sweepError("Failed to set frequency: " + m_rig->errorString());
         m_running = false;
         return;
@@ -115,7 +133,8 @@ void SweepEngine::readData() {
     const LP100AData &data = m_lp100a->lastData();
 
     SweepPoint pt;
-    pt.freqMHz = m_currentFreqMHz;
+    // Round to exact kHz to avoid floating point display artifacts
+    pt.freqMHz = std::round(m_currentFreqHz / 1000.0) / 1000.0;
     pt.power = data.power;
     pt.impedance = data.impedance;
     pt.phase = data.phase;
@@ -138,9 +157,9 @@ void SweepEngine::pttOff() {
     emit logMessage("  PTT OFF");
     m_rig->setPTT(false);
 
-    // Advance to next frequency
+    // Advance to next frequency (integer Hz — no floating point drift)
     m_currentStep++;
-    m_currentFreqMHz = m_params.startMHz + 0.001 + m_currentStep * (m_params.stepKHz / 1000.0);
+    m_currentFreqHz = m_startHz + static_cast<qint64>(m_currentStep) * m_stepHz;
 
     // Wait for TX to drop, then next step
     QTimer::singleShot(ReleaseTimeMs, this, &SweepEngine::nextStep);

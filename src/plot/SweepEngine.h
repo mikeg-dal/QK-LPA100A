@@ -44,11 +44,18 @@ private:
     LP100AProtocol *m_lp100a;
 
     SweepParams m_params;
-    double m_currentFreqMHz = 0;
+    qint64 m_currentFreqHz = 0;   // Use integer Hz to avoid floating point drift
+    qint64 m_startHz = 0;
+    qint64 m_stopHz = 0;
+    qint64 m_stepHz = 0;
     int m_currentStep = 0;
     int m_totalSteps = 0;
     bool m_running = false;
     bool m_stopRequested = false;
+
+    // Saved rig state — restored after sweep
+    double m_savedFreqHz = 0;
+    QString m_savedMode;
 
     static constexpr int ReleaseTimeMs = 100;
 };

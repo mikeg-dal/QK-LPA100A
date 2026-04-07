@@ -1,13 +1,36 @@
 #include <QApplication>
 #include <QPalette>
+#include <QTcpSocket>
+#include <QSettings>
 #include "Style.h"
 #include "vcp/VCPMainWindow.h"
+
+// Pre-warm macOS network stack at startup.
+// macOS blocks the first TCP SYN from a new process while evaluating it.
+// By making a throwaway connection attempt at startup, the process gets
+// cleared by the time the user actually tries to connect to a rig.
+static void prewarmNetwork() {
+    QSettings s("AI5QK", "QK-LP100A");
+    QString lastRigPort = s.value("rig/port", "").toString();
+    if (lastRigPort.contains(':')) {
+        QStringList parts = lastRigPort.split(':');
+        if (parts.size() == 2) {
+            QTcpSocket warmup;
+            warmup.connectToHost(parts[0], parts[1].toUShort());
+            warmup.waitForConnected(1000);
+            warmup.abort();
+        }
+    }
+}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("QK-LP100A");
     app.setOrganizationName("AI5QK");
     app.setApplicationVersion("0.1.0");
+
+    // Warm the macOS network stack early
+    prewarmNetwork();
 
     // QK4-style neutral dark palette
     QPalette pal;

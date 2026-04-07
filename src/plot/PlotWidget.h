@@ -27,12 +27,18 @@ public:
     };
 
     void setRig(HamlibRig *rig) { m_rig = rig; }
-    void setLP100A(LP100AProtocol *lp100a) { m_lp100a = lp100a; }
+    void setLP100A(LP100AProtocol *lp100a);
 
     SweepData &sweepData() { return m_data; }
     double startFreqMHz() const;
     double stopFreqMHz() const;
     double stepKHz() const;
+
+    void saveSettings();
+    void loadSettings();
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 signals:
     void runRequested();

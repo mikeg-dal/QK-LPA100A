@@ -1,5 +1,7 @@
 #include "core/HamlibRig.h"
 #include <QDebug>
+#include <QTcpSocket>
+#include <QThread>
 #include <hamlib/rig.h>
 
 // Suppress ALL Hamlib debug output — redirect to /dev/null
@@ -60,6 +62,22 @@ QList<HamlibRig::RigInfo> HamlibRig::availableRigs() {
 bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
     close();
 
+    bool isNetwork = port.contains(':');
+
+    // Pre-warm: for TCP connections, do a quick QTcpSocket connect first.
+    // This triggers macOS firewall prompts via Qt's event loop, which handles
+    // the permission dialog properly. Without this, Hamlib's raw socket connect
+    // gets blocked by the macOS Application Firewall on first attempt.
+    if (isNetwork) {
+        QStringList parts = port.split(':');
+        if (parts.size() == 2) {
+            QTcpSocket warmup;
+            warmup.connectToHost(parts[0], parts[1].toUShort());
+            warmup.waitForConnected(3000);
+            warmup.disconnectFromHost();
+        }
+    }
+
     rig_set_debug(RIG_DEBUG_NONE);
     m_rig = rig_init(modelId);
     if (!m_rig) {
@@ -68,12 +86,10 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
         return false;
     }
 
-    // Set the port (serial device path or hostname:port for network rigs)
     strncpy(m_rig->state.rigport.pathname, port.toUtf8().constData(),
             sizeof(m_rig->state.rigport.pathname) - 1);
 
-    // Detect TCP connections — port contains ':' (e.g. "192.168.1.10:9200")
-    if (port.contains(':')) {
+    if (isNetwork) {
         m_rig->state.rigport.type.rig = RIG_PORT_NETWORK;
     }
 
@@ -84,10 +100,12 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
     rig_set_debug(RIG_DEBUG_NONE);
     int ret = rig_open(m_rig);
 
-    // macOS may block the first TCP connect from a new app session.
-    // Retry once after a brief delay if the first attempt fails.
-    if (ret != RIG_OK && port.contains(':')) {
+    // If first attempt fails on TCP, wait and retry once
+    if (ret != RIG_OK && isNetwork) {
         rig_cleanup(m_rig);
+        QThread::msleep(1000);
+
+        rig_set_debug(RIG_DEBUG_NONE);
         m_rig = rig_init(modelId);
         if (m_rig) {
             strncpy(m_rig->state.rigport.pathname, port.toUtf8().constData(),
