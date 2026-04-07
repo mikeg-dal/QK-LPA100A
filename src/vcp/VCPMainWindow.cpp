@@ -103,8 +103,9 @@ void VCPMainWindow::createUI() {
     m_swrGauge->setFixedHeight(Style::Layout::MeterRowHeight);
     mainLayout->addWidget(m_swrGauge);
 
-    // Control buttons
-    auto *btnRow = new QHBoxLayout;
+    // Control buttons (hideable section)
+    m_buttonSection = new QWidget;
+    auto *btnRow = new QHBoxLayout(m_buttonSection);
     btnRow->setSpacing(Style::Layout::ButtonSpacing);
     btnRow->setContentsMargins(0, Style::Layout::ImpGridMarginTop, 0, 0);
 
@@ -121,7 +122,7 @@ void VCPMainWindow::createUI() {
     btnRow->addWidget(m_rangeBtn);
     btnRow->addWidget(m_alarmBtn);
     btnRow->addWidget(m_modeBtn);
-    mainLayout->addLayout(btnRow);
+    mainLayout->addWidget(m_buttonSection);
 
     // Impedance section
     m_impedanceSection = new QWidget;
@@ -297,7 +298,11 @@ void VCPMainWindow::setViewStyle(ViewStyle style) {
 }
 
 void VCPMainWindow::applyViewStyle() {
-    m_impedanceSection->setVisible(m_viewStyle >= Standard);
+    // Compact: meters only (no buttons, no impedance, no raw string)
+    // Standard: meters + buttons
+    // Full: meters + buttons + impedance + raw string
+    m_buttonSection->setVisible(m_viewStyle >= Standard);
+    m_impedanceSection->setVisible(m_viewStyle == Full);
     m_rawLabel->setVisible(m_viewStyle == Full);
     centralWidget()->adjustSize();
     adjustSize();
@@ -393,7 +398,21 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     m_refGauge->setValue(data.reflectedPower());
     updatePowerRange(data.powerRange);
 
+    // Mode suffix on power readout: "w" for Avg, "W" for Peak, "T" for Tune
+    // Matches the LP-100A front panel convention
+    switch (data.peakHoldMode) {
+        case 0: m_powerGauge->setModeSuffix("w"); break;  // Average
+        case 1: m_powerGauge->setModeSuffix("W"); break;  // Peak
+        case 2: m_powerGauge->setModeSuffix("T"); break;  // Tune
+    }
+
     m_modeLabel->setText(data.modeString());
+
+    // SWR: track whether power is present and which mode we're in
+    bool powerPresent = data.power > Style::SWR::AlarmPowerThreshold;
+    bool tuneMode = (data.peakHoldMode == 2);
+    m_swrGauge->setPowerPresent(powerPresent);
+    m_swrGauge->setTuneMode(tuneMode);
     m_swrGauge->setValue(data.swr);
     m_swrGauge->setAlarmPoint(data.alarmSWR());
 

@@ -20,6 +20,8 @@ QSize SWRGauge::sizeHint() const {
 
 void SWRGauge::setValue(double swr) {
     m_value = qBound(Style::SWR::Min, swr, Style::SWR::Max);
+    if (m_powerPresent && swr > 1.0)
+        m_lastActiveSwr = m_value;
     double ratio = swrToFraction(m_value);
     if (ratio > m_displayValue) m_displayValue = ratio;
     if (ratio > m_peakValue) {
@@ -154,15 +156,36 @@ void SWRGauge::paintEvent(QPaintEvent *) {
     valueFont.setBold(true);
     p.setFont(valueFont);
 
-    if (m_value < Style::SWR::GoodLimit)
-        p.setPen(QColor(Style::Color::StatusGreen));
-    else if (m_value < Style::SWR::WarningLimit)
-        p.setPen(QColor(Style::Color::MeterYellow));
-    else
-        p.setPen(QColor(Style::Color::StatusRed));
+    // SWR numeric display:
+    // - When power present: show current SWR, color-coded
+    // - Tune mode + no power: hold last active SWR
+    // - Other modes + no power: show "-.--"
+    QString swrText;
+    double displaySwr = m_value;
 
-    p.drawText(valueRect, Qt::AlignRight | Qt::AlignVCenter,
-               QString::number(m_value, 'f', 2));
+    if (!m_powerPresent) {
+        if (m_tuneMode) {
+            displaySwr = m_lastActiveSwr;  // Hold in Tune mode
+        } else {
+            swrText = "-.--";  // Blank in Avg/Peak when not transmitting
+        }
+    }
+
+    if (swrText.isEmpty()) {
+        swrText = QString::number(displaySwr, 'f', 2);
+    }
+
+    if (!m_powerPresent && !m_tuneMode) {
+        p.setPen(QColor(Style::Color::TextGray));  // Dimmed when inactive
+    } else if (displaySwr < Style::SWR::GoodLimit) {
+        p.setPen(QColor(Style::Color::StatusGreen));
+    } else if (displaySwr < Style::SWR::WarningLimit) {
+        p.setPen(QColor(Style::Color::MeterYellow));
+    } else {
+        p.setPen(QColor(Style::Color::StatusRed));
+    }
+
+    p.drawText(valueRect, Qt::AlignRight | Qt::AlignVCenter, swrText);
 }
 
 void SWRGauge::showEvent(QShowEvent *event) {

@@ -150,7 +150,7 @@ void PowerGauge::paintEvent(QPaintEvent *) {
                    Qt::AlignCenter, ticks[i].label);
     }
 
-    // Numeric value (right side)
+    // Numeric value (right side) — uses displayWatts so it decays with the bar
     QRect valueRect(w - valueW, 0, valueW, h);
     QFont valueFont(Style::Font::Monospace);
     valueFont.setPixelSize(Style::Font::Large);
@@ -158,13 +158,20 @@ void PowerGauge::paintEvent(QPaintEvent *) {
     p.setFont(valueFont);
     p.setPen(QColor(Style::Color::TextWhite));
 
+    // Show decaying display value, not instant target
+    double showWatts = m_displayWatts;
+    if (showWatts < 0.005) showWatts = 0.0; // Snap to zero when nearly decayed
+
     QString valueText;
-    if (m_targetWatts >= 1000)
-        valueText = QString::number(m_targetWatts, 'f', 0) + m_suffix;
-    else if (m_targetWatts >= 100)
-        valueText = QString::number(m_targetWatts, 'f', 1) + m_suffix;
+    if (showWatts >= 1000)
+        valueText = QString::number(showWatts, 'f', 0);
+    else if (showWatts >= 100)
+        valueText = QString::number(showWatts, 'f', 1);
     else
-        valueText = QString::number(m_targetWatts, 'f', 2) + m_suffix;
+        valueText = QString::number(showWatts, 'f', 2);
+
+    // Mode suffix: "w" for Avg, "W" for Peak, "T" for Tune
+    valueText += m_modeSuffix.isEmpty() ? m_suffix : m_modeSuffix;
 
     p.drawText(valueRect, Qt::AlignRight | Qt::AlignVCenter, valueText);
 }

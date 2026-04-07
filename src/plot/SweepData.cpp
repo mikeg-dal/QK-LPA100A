@@ -112,16 +112,16 @@ bool SweepData::exportCsv(const QString &path) const {
     out << "Freq_MHz,Power_W,Z_Ohms,Phase_Deg,R_Ohms,X_Ohms,SWR,dBm,RL_dB,Gamma\n";
 
     for (const auto &pt : m_points) {
-        out << pt.freqMHz << ','
-            << pt.power << ','
-            << pt.impedance << ','
-            << pt.phase << ','
-            << pt.resistance << ','
-            << pt.reactance << ','
-            << pt.swr << ','
-            << pt.dBm << ','
-            << returnLoss(pt.swr) << ','
-            << reflectionCoeff(pt.swr) << '\n';
+        out << QString::number(pt.freqMHz, 'f', 3) << ','
+            << QString::number(pt.power, 'f', 2) << ','
+            << QString::number(pt.impedance, 'f', 1) << ','
+            << QString::number(pt.phase, 'f', 1) << ','
+            << QString::number(pt.resistance, 'f', 1) << ','
+            << QString::number(pt.reactance, 'f', 1) << ','
+            << QString::number(pt.swr, 'f', 2) << ','
+            << QString::number(pt.dBm, 'f', 1) << ','
+            << QString::number(returnLoss(pt.swr), 'f', 2) << ','
+            << QString::number(reflectionCoeff(pt.swr), 'f', 4) << '\n';
     }
 
     return true;

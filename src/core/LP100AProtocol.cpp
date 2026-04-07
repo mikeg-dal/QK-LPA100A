@@ -93,13 +93,31 @@ void LP100AProtocol::poll() {
 }
 
 void LP100AProtocol::incrementAlarm() {
+    // Pause polling to avoid command/response collision on serial
+    int interval = m_pollTimer.interval();
+    m_pollTimer.stop();
+    m_buffer.clear(); // Discard any partial response in flight
+
     m_transport->write(QByteArray("A"));
-    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, &LP100AProtocol::poll);
+
+    // Resume polling after device processes the command
+    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, [this, interval]() {
+        poll();
+        m_pollTimer.start(interval);
+    });
 }
 
 void LP100AProtocol::togglePeakAvgTune() {
+    int interval = m_pollTimer.interval();
+    m_pollTimer.stop();
+    m_buffer.clear();
+
     m_transport->write(QByteArray("F"));
-    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, &LP100AProtocol::poll);
+
+    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, [this, interval]() {
+        poll();
+        m_pollTimer.start(interval);
+    });
 }
 
 void LP100AProtocol::onDataReceived(const QByteArray &data) {
@@ -108,7 +126,8 @@ void LP100AProtocol::onDataReceived(const QByteArray &data) {
     while (true) {
         int semiIdx = m_buffer.indexOf(';');
         if (semiIdx < 0) {
-            m_buffer.clear();
+            // Don't clear — keep partial data for next chunk
+            // Only discard obvious junk (non-response bytes before any semicolon)
             break;
         }
 

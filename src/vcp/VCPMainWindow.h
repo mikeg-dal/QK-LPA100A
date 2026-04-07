@@ -66,6 +66,7 @@ private:
     QLabel *m_statusLabel;
     QLabel *m_rawLabel;
 
+    QWidget *m_buttonSection;
     QWidget *m_impedanceSection;
     QLabel *m_zLabel;
     QLabel *m_phaseLabel;

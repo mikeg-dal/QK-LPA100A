@@ -15,6 +15,7 @@ public:
     void setMaxValue(double max);
     void setLabel(const QString &label) { m_label = label; update(); }
     void setSuffix(const QString &suffix) { m_suffix = suffix; update(); }
+    void setModeSuffix(const QString &s) { m_modeSuffix = s; update(); }
 
     double value() const { return m_targetWatts; }
     double maxValue() const { return m_maxValue; }
@@ -38,6 +39,7 @@ private:
     double m_maxValue = 25.0;
     QString m_label = "Pwr";
     QString m_suffix = "W";
+    QString m_modeSuffix;  // "w" for Avg, "W" for Peak, "T" for Tune
     QTimer m_decayTimer;
 
     static constexpr int DecayIntervalMs = 50;
