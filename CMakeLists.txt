@@ -76,7 +76,16 @@ qt_add_executable(QK-LP100A MACOSX_BUNDLE
     ${APP_ICON_MACOS}
 )
 
+set_target_properties(QK-LP100A PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/resources/Info.plist.in"
+)
 target_include_directories(QK-LP100A PRIVATE src /opt/homebrew/include)
+# Ad-hoc sign after build so macOS allows network access
+add_custom_command(TARGET QK-LP100A POST_BUILD
+    COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:QK-LP100A>"
+    COMMENT "Ad-hoc signing QK-LP100A.app"
+)
+
 target_link_libraries(QK-LP100A PRIVATE
     Qt6::Widgets
     Qt6::SerialPort

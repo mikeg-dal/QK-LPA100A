@@ -8,6 +8,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSettings>
+#include <QApplication>
+#include <QLineEdit>
 #include <cmath>
 
 PlotWidget::PlotWidget(QWidget *parent)
@@ -67,22 +69,27 @@ PlotWidget::PlotWidget(QWidget *parent)
     row2->addStretch();
     mainLayout->addLayout(row2);
 
-    // === Row 3: Setup — Sample, Settle, TX Mode, Rig, Port, Baud (like Windows Plot) ===
-    auto *row3 = new QHBoxLayout;
-    row3->setSpacing(4);
-    row3->addWidget(new QLabel("Sample"));
-    row3->addWidget(m_sampleCombo);
-    row3->addWidget(new QLabel("Settle"));
-    row3->addWidget(m_settleCombo);
-    row3->addWidget(new QLabel("TX Mode"));
-    row3->addWidget(m_txModeCombo);
-    row3->addWidget(m_powerSpin);
-    row3->addSpacing(8);
-    row3->addWidget(m_rigCombo);
-    row3->addWidget(m_rigPortCombo);
-    row3->addWidget(m_rigBaudCombo);
-    row3->addWidget(m_rigConnectBtn);
-    mainLayout->addLayout(row3);
+    // === Row 3a: Sweep settings ===
+    auto *row3a = new QHBoxLayout;
+    row3a->setSpacing(4);
+    row3a->addWidget(new QLabel("Sample"));
+    row3a->addWidget(m_sampleCombo);
+    row3a->addWidget(new QLabel("Settle"));
+    row3a->addWidget(m_settleCombo);
+    row3a->addWidget(new QLabel("TX Mode"));
+    row3a->addWidget(m_txModeCombo);
+    row3a->addWidget(m_powerSpin);
+    row3a->addStretch();
+    mainLayout->addLayout(row3a);
+
+    // === Row 3b: Rig connection ===
+    auto *row3b = new QHBoxLayout;
+    row3b->setSpacing(4);
+    row3b->addWidget(m_rigCombo);
+    row3b->addWidget(m_rigPortCombo, 1);
+    row3b->addWidget(m_rigBaudCombo);
+    row3b->addWidget(m_rigConnectBtn);
+    mainLayout->addLayout(row3b);
 
     // === Row 4: Status + raw string ===
     auto *row4 = new QHBoxLayout;
@@ -118,20 +125,45 @@ PlotWidget::PlotWidget(QWidget *parent)
             m_rigConnectBtn->setText("Connect Rig");
             m_statusLabel->setText("Rig disconnected");
         } else {
-            int modelId = m_rigCombo->currentData().toInt();
-            QString port = m_rigPortCombo->currentText().trimmed();
-            int baud = m_rigBaudCombo->currentText().toInt();
-            m_statusLabel->setText("Connecting to rig...");
-            emit rigConnectRequested(modelId, port, baud);
-            // Check if it worked
-            QTimer::singleShot(500, this, [this]() {
-                if (m_rig && m_rig->isOpen()) {
-                    m_rigConnectBtn->setText("Disconnect Rig");
-                    m_statusLabel->setText("Rig: " + m_rig->rigName());
-                } else {
-                    m_statusLabel->setText("Rig connect failed");
+            // Get rig model ID — findText handles editable combo text matching
+            int idx = m_rigCombo->currentIndex();
+            int modelId = (idx >= 0) ? m_rigCombo->itemData(idx).toInt() : 0;
+            if (modelId == 0) {
+                // Try to find by text match
+                QString typed = m_rigCombo->currentText().trimmed();
+                for (int i = 0; i < m_rigCombo->count(); ++i) {
+                    if (m_rigCombo->itemText(i).contains(typed, Qt::CaseInsensitive)) {
+                        modelId = m_rigCombo->itemData(i).toInt();
+                        break;
+                    }
                 }
-            });
+            }
+            if (modelId == 0) {
+                m_statusLabel->setText("Select a rig model first");
+                return;
+            }
+            // Read port directly from the line edit to avoid stale combo state
+            QString port = m_rigPortCombo->lineEdit()
+                ? m_rigPortCombo->lineEdit()->text().trimmed()
+                : m_rigPortCombo->currentText().trimmed();
+            if (port.isEmpty()) {
+                m_statusLabel->setText("Enter a port or IP:port");
+                return;
+            }
+            int baud = m_rigBaudCombo->currentText().toInt();
+            m_statusLabel->setText(QString("Connecting model=%1 port=%2 baud=%3...")
+                .arg(modelId).arg(port).arg(baud));
+            QApplication::processEvents();
+            emit rigConnectRequested(modelId, port, baud);
+
+            if (m_rig && m_rig->isOpen()) {
+                m_rigConnectBtn->setText("Disconnect Rig");
+                m_statusLabel->setText("Rig: " + m_rig->rigName());
+            } else {
+                // Show the actual Hamlib error
+                QString err = m_rig ? m_rig->errorString() : "m_rig is null";
+                m_statusLabel->setText("FAILED: " + err);
+            }
         }
     });
 
@@ -261,7 +293,7 @@ void PlotWidget::createControls() {
     m_rigCombo = new QComboBox;
     m_rigCombo->setEditable(true);
     m_rigCombo->setInsertPolicy(QComboBox::NoInsert);
-    m_rigCombo->setMinimumWidth(120);
+    m_rigCombo->setMinimumWidth(140);
     // Populate rig list
     auto rigs = HamlibRig::availableRigs();
     for (const auto &rig : rigs) {
@@ -279,7 +311,7 @@ void PlotWidget::createControls() {
 
     m_rigPortCombo = new QComboBox;
     m_rigPortCombo->setEditable(true);
-    m_rigPortCombo->setMinimumWidth(100);
+    m_rigPortCombo->setMinimumWidth(160);
     for (const auto &port : SerialTransport::availablePorts())
         m_rigPortCombo->addItem(port);
 

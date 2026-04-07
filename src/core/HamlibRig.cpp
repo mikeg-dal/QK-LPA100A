@@ -2,9 +2,13 @@
 #include <QDebug>
 #include <hamlib/rig.h>
 
-// Suppress ALL Hamlib debug output at module load time
+// Suppress ALL Hamlib debug output — redirect to /dev/null
 static struct HamlibDebugInit {
-    HamlibDebugInit() { rig_set_debug(RIG_DEBUG_NONE); }
+    HamlibDebugInit() {
+        rig_set_debug(RIG_DEBUG_NONE);
+        static FILE *devnull = fopen("/dev/null", "w");
+        if (devnull) rig_set_debug_file(devnull);
+    }
 } s_hamlibDebugInit;
 
 // Callback for rig_list_foreach to populate the rig list
@@ -79,10 +83,26 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
 
     rig_set_debug(RIG_DEBUG_NONE);
     int ret = rig_open(m_rig);
+
+    // macOS may block the first TCP connect from a new app session.
+    // Retry once after a brief delay if the first attempt fails.
+    if (ret != RIG_OK && port.contains(':')) {
+        rig_cleanup(m_rig);
+        m_rig = rig_init(modelId);
+        if (m_rig) {
+            strncpy(m_rig->state.rigport.pathname, port.toUtf8().constData(),
+                    sizeof(m_rig->state.rigport.pathname) - 1);
+            m_rig->state.rigport.type.rig = RIG_PORT_NETWORK;
+            if (baudRate > 0)
+                m_rig->state.rigport.parm.serial.rate = baudRate;
+            rig_set_debug(RIG_DEBUG_NONE);
+            ret = rig_open(m_rig);
+        }
+    }
+
     if (ret != RIG_OK) {
         setError(ret, QString("rig_open (model=%1 port=%2)").arg(modelId).arg(port));
-        rig_cleanup(m_rig);
-        m_rig = nullptr;
+        if (m_rig) { rig_cleanup(m_rig); m_rig = nullptr; }
         return false;
     }
 
