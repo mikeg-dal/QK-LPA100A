@@ -17,6 +17,7 @@ public:
     void setSuffix(const QString &suffix) { m_suffix = suffix; update(); }
     void setModeSuffix(const QString &s) { m_modeSuffix = s; update(); }
     void setPeakMode(bool peak) { m_peakMode = peak; }
+    void setTuneMode(bool tune) { m_tuneMode = tune; }
 
     double value() const { return m_targetWatts; }
     double maxValue() const { return m_maxValue; }
@@ -42,10 +43,16 @@ private:
     QString m_suffix = "W";
     QString m_modeSuffix;  // "w" for Avg, "W" for Peak, "T" for Tune
     bool m_peakMode = false;
+    bool m_tuneMode = false;
     QTimer m_decayTimer;
 
     static constexpr int DecayIntervalMs = 50;
     static constexpr int PeakHoldTicks = 40;  // 2 sec hold (matches LP-100A default)
-    static constexpr double DecayFraction = 0.25;      // Faster bar decay
-    static constexpr double PeakDecayFraction = 0.15;   // Faster peak indicator decay
+    // Decay rates — Tune is slow (smooth pulser), Avg/Peak are fast
+    // Avg/Peak: same decay rate for bar and peak indicator
+    static constexpr double DecayFast = 0.22;
+    static constexpr double PeakDecayFast = 0.22;   // Matches bar decay
+    // Tune: slower decay for pulser smoothing
+    static constexpr double DecaySlow = 0.08;
+    static constexpr double PeakDecaySlow = 0.05;
 };

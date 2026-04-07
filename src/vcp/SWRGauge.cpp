@@ -3,6 +3,8 @@
 #include <QDebug>
 #include <cmath>
 
+bool SWRGauge::s_debugEnabled = false;
+
 SWRGauge::SWRGauge(QWidget *parent)
     : QWidget(parent)
 {
@@ -27,7 +29,7 @@ void SWRGauge::setValue(double swr) {
         // SWR=1.00 with held/residual power is NOT a real measurement.
         if (swr < 1.005) {
             if (m_lastActiveSwr > 1.01 && m_swrHoldTicks > 0) {
-                qDebug() << "[SWR] REJECT swr=" << swr << "keeping" << m_lastActiveSwr
+                if (s_debugEnabled) qDebug() << "[SWR] REJECT swr=" << swr << "keeping" << m_lastActiveSwr
                          << "holdTicks=" << m_swrHoldTicks;
                 update();
                 return;
@@ -36,7 +38,7 @@ void SWRGauge::setValue(double swr) {
             // consecutive polls (meaning it's truly a matched load, not a timing artifact)
             m_unityCount++;
             if (m_unityCount < 10) {  // Require ~800ms of continuous SWR=1.00 with power
-                qDebug() << "[SWR] DEFER swr=1.00 unityCount=" << m_unityCount;
+                if (s_debugEnabled) qDebug() << "[SWR] DEFER swr=1.00 unityCount=" << m_unityCount;
                 update();
                 return;
             }
@@ -44,7 +46,7 @@ void SWRGauge::setValue(double swr) {
             m_unityCount = 0;  // Reset counter when we see non-unity SWR
         }
 
-        qDebug() << "[SWR] ACCEPT swr=" << swr << "powerPresent=" << m_powerPresent
+        if (s_debugEnabled) qDebug() << "[SWR] ACCEPT swr=" << swr << "powerPresent=" << m_powerPresent
                  << "peak=" << m_peakMode << "holdTicks=" << m_swrHoldTicks;
 
         m_value = qBound(Style::SWR::Min, swr, Style::SWR::Max);
@@ -76,18 +78,22 @@ void SWRGauge::decayValues() {
     if (!isVisible()) return;
 
     bool changed = false;
-    double target = swrToFraction(m_value);
+    // Bar target: when power is present, track current SWR.
+    // When power drops, decay bar to zero (not to last held value).
+    double target = m_powerPresent ? swrToFraction(m_value) : 0.0;
 
-    // Proportional decay (matches PowerGauge behavior)
+    double decayRate = m_tuneMode ? DecaySlow : DecayFast;
+    double peakDecay = m_tuneMode ? PeakDecaySlow : PeakDecayFast;
+
     if (m_displayValue > target + 0.001) {
-        m_displayValue -= (m_displayValue - target) * DecayRate;
+        m_displayValue -= (m_displayValue - target) * decayRate;
         if (m_displayValue < target) m_displayValue = target;
         changed = true;
     }
     if (m_peakValue > m_displayValue + 0.001) {
         if (m_peakHoldTicks > 0) { m_peakHoldTicks--; }
         else {
-            m_peakValue -= (m_peakValue - m_displayValue) * PeakDecayRate;
+            m_peakValue -= (m_peakValue - m_displayValue) * peakDecay;
             if (m_peakValue < m_displayValue) m_peakValue = m_displayValue;
         }
         changed = true;

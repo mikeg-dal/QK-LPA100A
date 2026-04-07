@@ -42,6 +42,8 @@ void PowerGauge::decayValues() {
     if (!isVisible()) return;
 
     bool changed = false;
+    double decayRate = m_tuneMode ? DecaySlow : DecayFast;
+    double peakDecay = m_tuneMode ? PeakDecaySlow : PeakDecayFast;
 
     // Snap to zero when target is zero and display has decayed to negligible
     if (m_targetWatts < 0.01 && m_displayWatts < 0.05) {
@@ -49,19 +51,23 @@ void PowerGauge::decayValues() {
         if (m_peakWatts > 0 && m_peakHoldTicks <= 0) { m_peakWatts = 0; changed = true; }
     }
 
+    // Bar decay — always follows target (no special Peak mode override)
     if (m_displayWatts > m_targetWatts + 0.01) {
-        m_displayWatts -= (m_displayWatts - m_targetWatts) * DecayFraction;
+        m_displayWatts -= (m_displayWatts - m_targetWatts) * decayRate;
         if (m_displayWatts < m_targetWatts) m_displayWatts = m_targetWatts;
         changed = true;
     }
+
+    // Peak indicator decay (after hold expires)
     if (m_peakWatts > m_displayWatts + 0.01) {
         if (m_peakHoldTicks > 0) { m_peakHoldTicks--; }
         else {
-            m_peakWatts -= (m_peakWatts - m_displayWatts) * PeakDecayFraction;
+            m_peakWatts -= (m_peakWatts - m_displayWatts) * peakDecay;
             if (m_peakWatts < m_displayWatts) m_peakWatts = m_displayWatts;
         }
         changed = true;
     }
+
     if (changed) update();
 }
 
@@ -119,7 +125,7 @@ void PowerGauge::paintEvent(QPaintEvent *) {
         p.fillRect(barX + 1, barY + 1, fillW - 2, barH - 2, grad);
     }
 
-    // Peak hold
+    // Peak hold indicator
     if (peakRatio > Style::Layout::MinPeakFraction) {
         int peakX = barX + static_cast<int>(barW * peakRatio);
         p.setPen(QPen(QColor(Style::Color::TextWhite), 1));
@@ -157,7 +163,7 @@ void PowerGauge::paintEvent(QPaintEvent *) {
                    Qt::AlignCenter, ticks[i].label);
     }
 
-    // Numeric value (right side) — uses displayWatts so it decays with the bar
+    // Numeric value (right side)
     QRect valueRect(w - valueW, 0, valueW, h);
     QFont valueFont(Style::Font::Monospace);
     valueFont.setPixelSize(Style::Font::Large);
@@ -165,7 +171,7 @@ void PowerGauge::paintEvent(QPaintEvent *) {
     p.setFont(valueFont);
     p.setPen(QColor(Style::Color::TextWhite));
 
-    // In Peak mode: show peak watts (holds then decays, matching SWR behavior)
+    // In Peak mode: show peak watts (holds then decays)
     // In Avg/Tune: show decaying display watts
     double showWatts = m_peakMode ? m_peakWatts : m_displayWatts;
     if (showWatts < 0.005) showWatts = 0.0;

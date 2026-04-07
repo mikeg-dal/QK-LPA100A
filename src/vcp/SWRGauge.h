@@ -15,6 +15,8 @@ public:
     void setPowerPresent(bool present) { m_powerPresent = present; update(); }
     void setTuneMode(bool tune) { m_tuneMode = tune; }
     void setPeakMode(bool peak) { m_peakMode = peak; }
+    static void setDebugEnabled(bool on) { s_debugEnabled = on; }
+    static bool s_debugEnabled;
 
     double value() const { return m_value; }
 
@@ -45,6 +47,11 @@ private:
 
     static constexpr int DecayIntervalMs = 50;
     static constexpr int PeakHoldTicks = 40;  // 2 sec hold (matches LP-100A default)
-    static constexpr double DecayRate = 0.08;
-    static constexpr double PeakDecayRate = 0.04;
+    // Decay rates — Tune is slow, Avg/Peak are fast
+    // Avg/Peak: same decay rate for bar and peak indicator
+    static constexpr double DecayFast = 0.22;
+    static constexpr double PeakDecayFast = 0.22;   // Matches bar decay
+    // Tune: slower decay
+    static constexpr double DecaySlow = 0.08;
+    static constexpr double PeakDecaySlow = 0.05;
 };

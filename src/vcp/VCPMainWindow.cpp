@@ -14,6 +14,10 @@
 #include <QApplication>
 #include <QActionGroup>
 #include <QTimer>
+#include <QStandardPaths>
+#include <QDir>
+#include <QTextStream>
+#include <QDateTime>
 
 VCPMainWindow::VCPMainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -323,6 +327,26 @@ void VCPMainWindow::showConnectionDialog() {
         m_tcpHost = dlg.tcpHost();
         m_tcpPort = dlg.tcpPort();
         m_pollInterval = dlg.pollIntervalMs();
+
+        // Debug logging
+        m_debugLogging = dlg.debugLogging();
+        QSettings ds("AI5QK", "QK-LP100A");
+        ds.setValue("debug/enabled", m_debugLogging);
+        if (m_debugLogging && !m_debugFile) {
+            QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                              + "/debug.log";
+            QDir().mkpath(QFileInfo(logPath).absolutePath());
+            m_debugFile = new QFile(logPath, this);
+            m_debugFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+            debugLog("=== Debug logging started ===");
+            debugLog("Log file: " + logPath);
+        SWRGauge::setDebugEnabled(m_debugLogging);
+        } else if (!m_debugLogging && m_debugFile) {
+            debugLog("=== Debug logging stopped ===");
+            m_debugFile->close();
+            delete m_debugFile;
+            m_debugFile = nullptr;
+        }
         saveSettings();
         connectToDevice();
     }
@@ -401,8 +425,11 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     // Mode suffix on power readout: "w" for Avg, "W" for Peak, "T" for Tune
     // Matches the LP-100A front panel convention
     bool isPeakMode = (data.peakHoldMode == 1);
+    bool isTuneMode = (data.peakHoldMode == 2);
     m_powerGauge->setPeakMode(isPeakMode);
+    m_powerGauge->setTuneMode(isTuneMode);
     m_refGauge->setPeakMode(isPeakMode);
+    m_refGauge->setTuneMode(isTuneMode);
     switch (data.peakHoldMode) {
         case 0: m_powerGauge->setModeSuffix("w"); break;  // Average
         case 1: m_powerGauge->setModeSuffix("W"); break;  // Peak
@@ -421,11 +448,10 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
 
     // Debug: log every poll where power or SWR changed
     static double lastLogPwr = -1, lastLogSwr = -1;
-    if (data.power != lastLogPwr || data.swr != lastLogSwr) {
-        qDebug() << "[POLL] Pwr=" << data.power << "SWR=" << data.swr
-                 << "Mode=" << data.modeString()
-                 << "swrValid=" << swrValid
-                 << "lastPwr=" << m_lastReportedPower;
+    if (m_debugLogging && (data.power != lastLogPwr || data.swr != lastLogSwr)) {
+        debugLog(QString("[POLL] Pwr=%1 SWR=%2 Mode=%3 swrValid=%4 lastPwr=%5")
+            .arg(data.power).arg(data.swr).arg(data.modeString())
+            .arg(swrValid).arg(m_lastReportedPower));
         lastLogPwr = data.power;
         lastLogSwr = data.swr;
     }
@@ -479,6 +505,13 @@ void VCPMainWindow::updatePowerRange(int rangeCode) {
 }
 
 void VCPMainWindow::onRawResponse(const QString &resp) { m_rawLabel->setText(resp); }
+
+void VCPMainWindow::debugLog(const QString &msg) {
+    if (!m_debugLogging || !m_debugFile || !m_debugFile->isOpen()) return;
+    QTextStream out(m_debugFile);
+    out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz") << " " << msg << "\n";
+    out.flush();
+}
 void VCPMainWindow::onParseError(const QString &err) { m_statusLabel->setText("Parse error: " + err); }
 
 void VCPMainWindow::onRangeClicked() {

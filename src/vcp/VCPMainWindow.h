@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
+#include <QFile>
 #include "core/ITransport.h"
 #include "core/LP100AProtocol.h"
 #include "core/HamlibRig.h"
@@ -45,6 +46,7 @@ private:
     void updateConnectionUI(bool connected);
     void updatePowerRange(int rangeCode);
     void applyViewStyle();
+    void debugLog(const QString &msg);
 
     ITransport *m_transport = nullptr;
     LP100AProtocol *m_protocol = nullptr;
@@ -96,4 +98,6 @@ private:
     int m_lastAlarmSetPoint = -1;
     bool m_lastAlarmTripped = false;
     double m_lastReportedPower = 0.0;
+    bool m_debugLogging = false;
+    QFile *m_debugFile = nullptr;
 };

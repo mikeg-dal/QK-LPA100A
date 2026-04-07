@@ -136,7 +136,7 @@ namespace Protocol {
     constexpr int MinTcpPort     = 1;
     constexpr int MaxTcpPort     = 65535;
     constexpr const char *DefaultTcpHost = "192.168.1.100";
-    constexpr int CommandDelayMs = 50;   // Delay after A/M/F before polling
+    constexpr int CommandDelayMs = 150;  // Delay after A/M/F before polling (LP-100A needs time)
 }
 
 // =============================================================================

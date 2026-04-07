@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QFormLayout>
 #include <QPushButton>
+#include <QSettings>
 
 ConnectionDialog::ConnectionDialog(QWidget *parent)
     : QDialog(parent)
@@ -70,7 +71,13 @@ ConnectionDialog::ConnectionDialog(QWidget *parent)
     layout->addWidget(m_tcpRadio);
     layout->addWidget(tcpGroup);
     layout->addSpacing(8);
+    // --- Debug logging ---
+    m_debugCheck = new QCheckBox("Enable debug logging to file");
+    QSettings ds("AI5QK", "QK-LP100A");
+    m_debugCheck->setChecked(ds.value("debug/enabled", false).toBool());
+
     layout->addWidget(pollGroup);
+    layout->addWidget(m_debugCheck);
     layout->addWidget(m_buttons);
 
     // Enable/disable groups based on radio selection
@@ -106,6 +113,10 @@ quint16 ConnectionDialog::tcpPort() const {
 
 int ConnectionDialog::pollIntervalMs() const {
     return m_pollSpin->value();
+}
+
+bool ConnectionDialog::debugLogging() const {
+    return m_debugCheck->isChecked();
 }
 
 void ConnectionDialog::setSerialPort(const QString &port) {

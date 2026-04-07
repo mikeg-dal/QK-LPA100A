@@ -5,6 +5,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QRadioButton>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 
 class ConnectionDialog : public QDialog {
@@ -19,6 +20,7 @@ public:
     QString tcpHost() const;
     quint16 tcpPort() const;
     int pollIntervalMs() const;
+    bool debugLogging() const;
 
     void setSerialPort(const QString &port);
     void setTcpHost(const QString &host);
@@ -34,5 +36,6 @@ private:
     QLineEdit *m_hostEdit;
     QSpinBox *m_tcpPortSpin;
     QSpinBox *m_pollSpin;
+    QCheckBox *m_debugCheck;
     QDialogButtonBox *m_buttons;
 };
