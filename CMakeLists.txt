@@ -14,12 +14,13 @@ set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
 set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 set(MACOSX_BUNDLE_ICON_FILE "AppIcon.icns")
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort Network Charts)
+find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort Network)
 
 set(CORE_SOURCES
     src/core/LP100AProtocol.cpp
     src/core/SerialTransport.cpp
     src/core/TcpTransport.cpp
+    src/core/HamlibClient.cpp
 )
 
 set(CORE_HEADERS
@@ -27,6 +28,7 @@ set(CORE_HEADERS
     src/core/LP100AProtocol.h
     src/core/SerialTransport.h
     src/core/TcpTransport.h
+    src/core/HamlibClient.h
 )
 
 set(VCP_SOURCES
@@ -61,5 +63,4 @@ target_link_libraries(QK-LP100A PRIVATE
     Qt6::Widgets
     Qt6::SerialPort
     Qt6::Network
-    Qt6::Charts
 )

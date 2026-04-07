@@ -6,12 +6,12 @@
 #include <QString>
 
 // Centralized style constants — follows QK4 styling conventions.
-// No magic numbers in UI code. All values referenced from here.
+// Every visual value in the app references this file. No magic numbers elsewhere.
 
 namespace Style {
 
 // =============================================================================
-// Color Palette (matching QK4 neutral dark theme)
+// Color Palette (QK4 neutral dark theme)
 // =============================================================================
 namespace Color {
     // Backgrounds
@@ -29,7 +29,7 @@ namespace Color {
     constexpr const char *TextGray       = "#999999";
     constexpr const char *InactiveGray   = "#666666";
 
-    // Meter gradient stops
+    // Meter gradient stops (green -> yellow -> red)
     constexpr const char *MeterGreenDark  = "#00CC00";
     constexpr const char *MeterGreen      = "#00FF00";
     constexpr const char *MeterYellowGreen= "#CCFF00";
@@ -42,54 +42,85 @@ namespace Color {
     constexpr const char *StatusGreen    = "#00FF00";
     constexpr const char *StatusRed      = "#FF0000";
 
+    // Button gradient stops (4-stop vertical, QK4 pattern)
+    constexpr const char *GradientTop    = "#4a4a4a";
+    constexpr const char *GradientMid1   = "#3a3a3a";
+    constexpr const char *GradientMid2   = "#353535";
+    constexpr const char *GradientBottom = "#2a2a2a";
+    constexpr const char *HoverTop       = "#5a5a5a";
+    constexpr const char *HoverMid1      = "#4a4a4a";
+    constexpr const char *HoverMid2      = "#454545";
+    constexpr const char *HoverBottom    = "#3a3a3a";
+
     // Borders
     constexpr const char *BorderNormal   = "#606060";
     constexpr const char *BorderHover    = "#808080";
+    constexpr const char *BorderPressed  = "#909090";
     constexpr const char *PanelBorder    = "#444444";
 }
 
 // =============================================================================
-// Font
+// Font (pixel sizes — use with QFont::setPixelSize)
 // =============================================================================
 namespace Font {
     constexpr const char *Family    = "Inter";
     constexpr const char *Monospace = "Menlo";
 
-    constexpr int Tiny       = 7;    // QK4: FontSizeTiny
-    constexpr int Small      = 8;    // QK4: FontSizeSmall
-    constexpr int Normal     = 9;    // QK4: FontSizeNormal
-    constexpr int Medium     = 10;   // QK4: FontSizeMedium
-    constexpr int Button     = 11;   // QK4: FontSizeLarge
-    constexpr int Large      = 12;   // QK4: FontSizeButton
-    constexpr int Callsign   = 16;
-    constexpr int SWRReadout = 18;
-    constexpr int PowerReadout = 28;
+    constexpr int Tiny       = 7;    // Scale ticks, raw label
+    constexpr int Small      = 8;    // Status bar, secondary text
+    constexpr int Normal     = 9;    // Field labels (Z:, R:, etc.)
+    constexpr int Medium     = 10;   // Meter labels, impedance values, compact buttons
+    constexpr int Large      = 12;   // Gauge inline readout
+    constexpr int Callsign   = 16;   // Callsign banner
 }
 
 // =============================================================================
 // Layout (pixels)
 // =============================================================================
 namespace Layout {
-    constexpr int WindowMinWidth  = 520;
-    constexpr int WindowMinHeight = 420;
-    constexpr int MainMargin      = 12;
-    constexpr int MainSpacing     = 6;
+    // Main window margins and spacing
+    constexpr int MainMarginH     = 8;
+    constexpr int MainMarginTop   = 6;
+    constexpr int MainMarginBottom= 4;
+    constexpr int MainSpacing     = 2;   // Between meter rows
 
-    constexpr int ButtonHeight    = 36;
-    constexpr int BorderRadius    = 6;
+    // Callsign banner
+    constexpr int BannerPadH      = 8;
+    constexpr int BannerPadV      = 2;
+    constexpr int BannerRadius    = 3;
 
-    constexpr int MeterRowHeight  = 28;  // Room for bar + scale labels below
-    constexpr int MeterLabelWidth = 40;
-    constexpr int MeterBarHeight  = 14;
-    constexpr int MeterBarGap     = 4;
-    constexpr int MeterTickHeight = 2;
-    constexpr int MeterMinWidth   = 300;
+    // Meter gauge geometry (shared by PowerGauge and SWRGauge)
+    constexpr int MeterRowHeight     = 28;   // Total widget height per meter
+    constexpr int MeterLabelBoxWidth = 36;   // "Pwr" / "Ref" / "SWR" label box
+    constexpr int MeterBarHeight     = 12;   // Filled bar track height
+    constexpr int MeterBarGap        = 4;    // Gap between label box and bar
+    constexpr int MeterValueWidth    = 80;   // Numeric readout area on right
+    constexpr int MeterTickHeight    = 2;    // Tick marks above bar
+    constexpr int MeterScaleLabelW   = 24;   // Bounding box width per tick label
+    constexpr int MeterScaleLabelH   = 8;    // Bounding box height per tick label
+    constexpr int MeterPreferredWidth= 500;  // sizeHint preferred width
+    constexpr int MeterMinWidth      = 300;  // minimumSizeHint width
 
-    constexpr int BannerPad       = 6;
-    constexpr int BannerRadius    = 4;
+    // Paint thresholds (minimum fraction to draw)
+    constexpr double MinBarFraction  = 0.001;
+    constexpr double MinPeakFraction = 0.01;
+
+    // Buttons
+    constexpr int CompactButtonHeight = 22;
+    constexpr int ButtonSpacing       = 4;
+
+    // Impedance grid
     constexpr int ImpGridHSpacing = 16;
-    constexpr int ImpGridVSpacing = 4;
-    constexpr int SeparatorHeight = 1;
+    constexpr int ImpGridVSpacing = 2;
+    constexpr int ImpGridMarginTop= 2;
+
+    // Bottom elements
+    constexpr int RawLabelHeight  = 14;
+    constexpr int StatusBarHeight = 18;
+
+    // Connection dialog
+    constexpr int DialogMinWidth  = 380;
+    constexpr int DialogSpacing   = 8;
 }
 
 // =============================================================================
@@ -104,6 +135,8 @@ namespace Protocol {
     constexpr int DefaultTcpPort = 10001;
     constexpr int MinTcpPort     = 1;
     constexpr int MaxTcpPort     = 65535;
+    constexpr const char *DefaultTcpHost = "192.168.1.100";
+    constexpr int CommandDelayMs = 50;   // Delay after A/M/F before polling
 }
 
 // =============================================================================
@@ -142,72 +175,115 @@ inline QLinearGradient meterGradient(qreal x1, qreal y1, qreal x2, qreal y2) {
 }
 
 // =============================================================================
-// CSS Helpers — following QK4 pattern: helper to build gradient strings,
-// then compose complete stylesheets from those building blocks.
+// CSS Helpers — gradient builder + button stylesheets
 // =============================================================================
 namespace detail {
 
-// 4-stop vertical gradient CSS string (QK4 button pattern)
 inline QString gradient(const char *top, const char *mid1, const char *mid2, const char *bottom) {
-    return QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1,"
-                          "stop:0 ") + top +
-           QStringLiteral(",stop:0.4 ") + mid1 +
-           QStringLiteral(",stop:0.6 ") + mid2 +
-           QStringLiteral(",stop:1 ") + bottom + QStringLiteral(")");
+    return QString("qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+                   "stop:0 %1,stop:0.4 %2,stop:0.6 %3,stop:1 %4)")
+        .arg(top, mid1, mid2, bottom);
 }
 
-// Reversed gradient for pressed state
 inline QString gradientReversed(const char *top, const char *mid1, const char *mid2, const char *bottom) {
     return gradient(bottom, mid2, mid1, top);
 }
 
 } // namespace detail
 
-// Standard dark gradient button (QK4 popupButtonNormal equivalent)
-inline QString buttonNormal() {
-    return QStringLiteral("QPushButton { background: ") +
-        detail::gradient("#4a4a4a", "#3a3a3a", "#353535", "#2a2a2a") +
-        QStringLiteral("; color: #FFFFFF; border: 2px solid #606060;"
-                       " border-radius: 6px; padding: 6px 12px;"
-                       " font-size: 12px; font-weight: 600; }"
-                       "QPushButton:hover { background: ") +
-        detail::gradient("#5a5a5a", "#4a4a4a", "#454545", "#3a3a3a") +
-        QStringLiteral("; border: 2px solid #808080; }"
-                       "QPushButton:pressed { background: ") +
-        detail::gradientReversed("#4a4a4a", "#3a3a3a", "#353535", "#2a2a2a") +
-        QStringLiteral("; border: 2px solid #909090; }");
+// Compact control button (QK4 compactButton style)
+inline QString buttonCompact() {
+    static const QString s =
+        QStringLiteral("QPushButton { background: ") +
+        detail::gradient(Color::GradientTop, Color::GradientMid1,
+                         Color::GradientMid2, Color::GradientBottom) +
+        QString("; color: %1; border: 1px solid %2;"
+                " border-radius: 4px; padding: 3px 8px;"
+                " font-size: %3px; font-weight: bold; }")
+            .arg(Color::TextWhite).arg(Color::BorderNormal)
+            .arg(Font::Medium) +
+        QStringLiteral("QPushButton:hover { background: ") +
+        detail::gradient(Color::HoverTop, Color::HoverMid1,
+                         Color::HoverMid2, Color::HoverBottom) +
+        QString("; border: 1px solid %1; }").arg(Color::BorderHover) +
+        QStringLiteral("QPushButton:pressed { background: ") +
+        detail::gradientReversed(Color::GradientTop, Color::GradientMid1,
+                                 Color::GradientMid2, Color::GradientBottom) +
+        QString("; border: 1px solid %1; }").arg(Color::BorderPressed);
+    return s;
 }
 
-// Alarm tripped — solid red
+// Compact alarm tripped
+inline QString buttonCompactAlarm() {
+    static const QString s =
+        QString("QPushButton { background: %1; color: %2;"
+                " border: 1px solid %1; border-radius: 4px;"
+                " padding: 3px 8px; font-size: %3px; font-weight: bold; }")
+            .arg(Color::StatusRed, Color::TextWhite)
+            .arg(Font::Medium);
+    return s;
+}
+
+// Standard button (for dialogs, full-size controls)
+inline QString buttonNormal() {
+    static const QString s =
+        QStringLiteral("QPushButton { background: ") +
+        detail::gradient(Color::GradientTop, Color::GradientMid1,
+                         Color::GradientMid2, Color::GradientBottom) +
+        QString("; color: %1; border: 2px solid %2;"
+                " border-radius: 6px; padding: 6px 12px;"
+                " font-size: %3px; font-weight: 600; }")
+            .arg(Color::TextWhite).arg(Color::BorderNormal)
+            .arg(Font::Large) +
+        QStringLiteral("QPushButton:hover { background: ") +
+        detail::gradient(Color::HoverTop, Color::HoverMid1,
+                         Color::HoverMid2, Color::HoverBottom) +
+        QString("; border: 2px solid %1; }").arg(Color::BorderHover) +
+        QStringLiteral("QPushButton:pressed { background: ") +
+        detail::gradientReversed(Color::GradientTop, Color::GradientMid1,
+                                 Color::GradientMid2, Color::GradientBottom) +
+        QString("; border: 2px solid %1; }").arg(Color::BorderPressed);
+    return s;
+}
+
+// Alarm tripped (full size)
 inline QString buttonAlarmTripped() {
-    return QStringLiteral(
-        "QPushButton { background: #FF0000; color: #FFFFFF;"
-        " border: 2px solid #FF0000; border-radius: 6px;"
-        " padding: 6px 12px; font-size: 12px; font-weight: bold; }");
+    static const QString s =
+        QString("QPushButton { background: %1; color: %2;"
+                " border: 2px solid %1; border-radius: 6px;"
+                " padding: 6px 12px; font-size: %3px; font-weight: bold; }")
+            .arg(Color::StatusRed, Color::TextWhite).arg(Font::Large);
+    return s;
 }
 
 // Connect button — green gradient
 inline QString connectButton() {
-    return QStringLiteral("QPushButton { background: ") +
+    static const QString s =
+        QStringLiteral("QPushButton { background: ") +
         detail::gradient("#2a5a2a", "#1a4a1a", "#184518", "#143814") +
-        QStringLiteral("; color: #FFFFFF; border: 2px solid #3a6a3a;"
-                       " border-radius: 6px; padding: 6px 12px;"
-                       " font-size: 12px; font-weight: 600; }"
-                       "QPushButton:hover { background: ") +
+        QString("; color: %1; border: 2px solid #3a6a3a;"
+                " border-radius: 6px; padding: 6px 12px;"
+                " font-size: %2px; font-weight: 600; }")
+            .arg(Color::TextWhite).arg(Font::Large) +
+        QStringLiteral("QPushButton:hover { background: ") +
         detail::gradient("#3a6a3a", "#2a5a2a", "#255525", "#1a4a1a") +
         QStringLiteral("; border: 2px solid #4a7a4a; }");
+    return s;
 }
 
 // Disconnect button — red gradient
 inline QString disconnectButton() {
-    return QStringLiteral("QPushButton { background: ") +
+    static const QString s =
+        QStringLiteral("QPushButton { background: ") +
         detail::gradient("#5a2a2a", "#4a1a1a", "#451818", "#381414") +
-        QStringLiteral("; color: #FFFFFF; border: 2px solid #6a3a3a;"
-                       " border-radius: 6px; padding: 6px 12px;"
-                       " font-size: 12px; font-weight: 600; }"
-                       "QPushButton:hover { background: ") +
+        QString("; color: %1; border: 2px solid #6a3a3a;"
+                " border-radius: 6px; padding: 6px 12px;"
+                " font-size: %2px; font-weight: 600; }")
+            .arg(Color::TextWhite).arg(Font::Large) +
+        QStringLiteral("QPushButton:hover { background: ") +
         detail::gradient("#6a3a3a", "#5a2a2a", "#552525", "#4a1a1a") +
         QStringLiteral("; border: 2px solid #7a4a4a; }");
+    return s;
 }
 
 } // namespace Style

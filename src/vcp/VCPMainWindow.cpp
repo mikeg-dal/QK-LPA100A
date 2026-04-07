@@ -11,8 +11,7 @@
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QApplication>
-#include <QFont>
-#include <QFrame>
+#include <QActionGroup>
 #include <QTimer>
 
 VCPMainWindow::VCPMainWindow(QWidget *parent)
@@ -25,12 +24,14 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
     loadSettings();
     applyViewStyle();
 
-    if (m_wasConnected && !m_serialPort.isEmpty()) {
-        QTimer::singleShot(100, this, &VCPMainWindow::connectToDevice);
+    // Auto-reconnect if previously connected (deferred to next event loop iteration)
+    if (m_wasConnected && (m_useTcp ? !m_tcpHost.isEmpty() : !m_serialPort.isEmpty())) {
+        QTimer::singleShot(0, this, &VCPMainWindow::connectToDevice);
     }
 }
 
 VCPMainWindow::~VCPMainWindow() {
+    disconnect(this);  // Sever all incoming signals before teardown
     saveSettings();
     if (m_protocol) m_protocol->stopPolling();
     if (m_transport && m_transport->isOpen()) m_transport->close();
@@ -41,12 +42,13 @@ void VCPMainWindow::createUI() {
     setCentralWidget(central);
 
     auto *mainLayout = new QVBoxLayout(central);
-    mainLayout->setSpacing(2);
-    mainLayout->setContentsMargins(8, 6, 8, 4);
+    mainLayout->setSpacing(Style::Layout::MainSpacing);
+    mainLayout->setContentsMargins(Style::Layout::MainMarginH, Style::Layout::MainMarginTop,
+                                   Style::Layout::MainMarginH, Style::Layout::MainMarginBottom);
 
-    // --- Callsign + Mode row ---
+    // Callsign + Mode row
     auto *topRow = new QHBoxLayout;
-    topRow->setSpacing(8);
+    topRow->setSpacing(Style::Layout::MainMarginH);
 
     m_callsignLabel = new QLabel("LP-100A");
     QFont callFont(Style::Font::Family);
@@ -55,9 +57,11 @@ void VCPMainWindow::createUI() {
     m_callsignLabel->setFont(callFont);
     m_callsignLabel->setStyleSheet(
         QString("color: %1; background: %2; border: 1px solid %3; "
-                "border-radius: 3px; padding: 2px 8px;")
+                "border-radius: %4px; padding: %5px %6px;")
             .arg(Style::Color::AccentAmber, Style::Color::DarkBackground,
-                 Style::Color::PanelBorder));
+                 Style::Color::PanelBorder)
+            .arg(Style::Layout::BannerRadius)
+            .arg(Style::Layout::BannerPadV).arg(Style::Layout::BannerPadH));
 
     m_modeLabel = new QLabel("Avg");
     QFont modeFont(Style::Font::Family);
@@ -71,7 +75,7 @@ void VCPMainWindow::createUI() {
     topRow->addWidget(m_modeLabel);
     mainLayout->addLayout(topRow);
 
-    // --- Meters ---
+    // Meters
     m_powerGauge = new PowerGauge;
     m_powerGauge->setLabel("Pwr");
     m_powerGauge->setMaxValue(Style::PowerRange::Low);
@@ -88,19 +92,19 @@ void VCPMainWindow::createUI() {
     m_swrGauge->setFixedHeight(Style::Layout::MeterRowHeight);
     mainLayout->addWidget(m_swrGauge);
 
-    // --- Control buttons (always visible) ---
+    // Control buttons (always visible)
     auto *btnRow = new QHBoxLayout;
-    btnRow->setSpacing(4);
-    btnRow->setContentsMargins(0, 2, 0, 0);
+    btnRow->setSpacing(Style::Layout::ButtonSpacing);
+    btnRow->setContentsMargins(0, Style::Layout::ImpGridMarginTop, 0, 0);
 
     m_rangeBtn = new QPushButton("Range: Auto");
     m_alarmBtn = new QPushButton("Alarm: Off");
     m_modeBtn = new QPushButton("Avg");
 
     for (auto *btn : {m_rangeBtn, m_alarmBtn, m_modeBtn}) {
-        btn->setStyleSheet(Style::buttonNormal());
+        btn->setStyleSheet(Style::buttonCompact());
         btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        btn->setFixedHeight(28);
+        btn->setFixedHeight(Style::Layout::CompactButtonHeight);
     }
 
     btnRow->addWidget(m_rangeBtn);
@@ -108,15 +112,15 @@ void VCPMainWindow::createUI() {
     btnRow->addWidget(m_modeBtn);
     mainLayout->addLayout(btnRow);
 
-    // --- Impedance section ---
+    // Impedance section
     m_impedanceSection = new QWidget;
     auto *impGrid = new QGridLayout(m_impedanceSection);
-    impGrid->setContentsMargins(0, 2, 0, 0);
+    impGrid->setContentsMargins(0, Style::Layout::ImpGridMarginTop, 0, 0);
     impGrid->setHorizontalSpacing(Style::Layout::ImpGridHSpacing);
-    impGrid->setVerticalSpacing(2);
+    impGrid->setVerticalSpacing(Style::Layout::ImpGridVSpacing);
 
     QFont fieldFont(Style::Font::Family);
-    fieldFont.setPixelSize(Style::Font::Small);
+    fieldFont.setPixelSize(Style::Font::Normal);
     QFont valueFont(Style::Font::Monospace);
     valueFont.setPixelSize(Style::Font::Medium);
     valueFont.setBold(true);
@@ -151,10 +155,9 @@ void VCPMainWindow::createUI() {
     impGrid->addWidget(m_rLabel, 1, 1);
     impGrid->addWidget(makeLabel("X:"), 1, 2);
     impGrid->addWidget(m_xLabel, 1, 3);
-
     mainLayout->addWidget(m_impedanceSection);
 
-    // --- Raw input string (Full view only) ---
+    // Raw input string (Full view only)
     m_rawLabel = new QLabel;
     QFont rawFont(Style::Font::Monospace);
     rawFont.setPixelSize(Style::Font::Tiny);
@@ -163,17 +166,17 @@ void VCPMainWindow::createUI() {
         QString("color: %1; background: %2; border: 1px solid %3; padding: 1px 3px;")
             .arg(Style::Color::InactiveGray, Style::Color::DarkBackground,
                  Style::Color::PanelBorder));
-    m_rawLabel->setFixedHeight(14);
+    m_rawLabel->setFixedHeight(Style::Layout::RawLabelHeight);
     mainLayout->addWidget(m_rawLabel);
 
-    // --- Status bar ---
+    // Status bar
     m_statusLabel = new QLabel("Disconnected");
     QFont statusFont(Style::Font::Family);
     statusFont.setPixelSize(Style::Font::Small);
     m_statusLabel->setFont(statusFont);
     m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
     statusBar()->addWidget(m_statusLabel, 1);
-    statusBar()->setFixedHeight(18);
+    statusBar()->setFixedHeight(Style::Layout::StatusBarHeight);
 
     // Signal connections
     connect(m_rangeBtn, &QPushButton::clicked, this, &VCPMainWindow::onRangeClicked);
@@ -186,17 +189,13 @@ void VCPMainWindow::createUI() {
 }
 
 void VCPMainWindow::createMenus() {
-    // File menu — connection management lives here
     auto *fileMenu = menuBar()->addMenu("File");
-
     m_connectAction = fileMenu->addAction("Connect...", this, &VCPMainWindow::showConnectionDialog);
     m_disconnectAction = fileMenu->addAction("Disconnect", this, &VCPMainWindow::disconnectFromDevice);
     m_disconnectAction->setEnabled(false);
-
     fileMenu->addSeparator();
     fileMenu->addAction("Quit", QKeySequence::Quit, qApp, &QApplication::quit);
 
-    // Style menu
     auto *styleMenu = menuBar()->addMenu("Style");
     auto *styleGroup = new QActionGroup(this);
     styleGroup->setExclusive(true);
@@ -217,12 +216,12 @@ void VCPMainWindow::createMenus() {
     fullAction->setActionGroup(styleGroup);
     connect(fullAction, &QAction::triggered, this, [this]() { setViewStyle(Full); });
 
-    // Help menu
     auto *helpMenu = menuBar()->addMenu("Help");
     helpMenu->addAction("About QK-LP100A...", this, [this]() {
         QMessageBox::about(this, "QK-LP100A",
-            "QK-LP100A Virtual Control Panel\nVersion 0.1.0\n\n"
-            "TelePost LP-100A Interface\nAI5QK");
+            QString("QK-LP100A Virtual Control Panel\nVersion %1\n\n"
+                    "TelePost LP-100A Interface\nAI5QK")
+                .arg(QApplication::applicationVersion()));
     });
 }
 
@@ -233,20 +232,8 @@ void VCPMainWindow::setViewStyle(ViewStyle style) {
 }
 
 void VCPMainWindow::applyViewStyle() {
-    switch (m_viewStyle) {
-        case Compact:
-            m_impedanceSection->hide();
-            m_rawLabel->hide();
-            break;
-        case Standard:
-            m_impedanceSection->show();
-            m_rawLabel->hide();
-            break;
-        case Full:
-            m_impedanceSection->show();
-            m_rawLabel->show();
-            break;
-    }
+    m_impedanceSection->setVisible(m_viewStyle >= Standard);
+    m_rawLabel->setVisible(m_viewStyle == Full);
     centralWidget()->adjustSize();
     adjustSize();
 }
@@ -270,8 +257,19 @@ void VCPMainWindow::showConnectionDialog() {
 }
 
 void VCPMainWindow::connectToDevice() {
-    if (m_protocol) { m_protocol->stopPolling(); delete m_protocol; m_protocol = nullptr; }
-    if (m_transport) { m_transport->close(); delete m_transport; m_transport = nullptr; }
+    // Safe teardown: disconnect signals first, then deleteLater
+    if (m_protocol) {
+        disconnect(m_protocol, nullptr, this, nullptr);
+        m_protocol->stopPolling();
+        m_protocol->deleteLater();
+        m_protocol = nullptr;
+    }
+    if (m_transport) {
+        disconnect(m_transport, nullptr, this, nullptr);
+        m_transport->close();
+        m_transport->deleteLater();
+        m_transport = nullptr;
+    }
 
     if (m_useTcp) {
         auto *tcp = new TcpTransport(this);
@@ -286,6 +284,9 @@ void VCPMainWindow::connectToDevice() {
 
     m_protocol = new LP100AProtocol(m_transport, this);
     connect(m_transport, &ITransport::connectionChanged, this, &VCPMainWindow::onConnectionChanged);
+    connect(m_transport, &ITransport::errorOccurred, this, [this](const QString &err) {
+        m_statusLabel->setText("Error: " + err);
+    });
     connect(m_protocol, &LP100AProtocol::dataUpdated, this, &VCPMainWindow::onDataUpdated);
     connect(m_protocol, &LP100AProtocol::rawResponse, this, &VCPMainWindow::onRawResponse);
     connect(m_protocol, &LP100AProtocol::parseError, this, &VCPMainWindow::onParseError);
@@ -294,7 +295,8 @@ void VCPMainWindow::connectToDevice() {
         m_statusLabel->setText("Failed to connect");
         return;
     }
-    if (m_transport->isOpen()) onConnectionChanged(true);
+    // Trust the connectionChanged signal — don't call onConnectionChanged directly
+    // (SerialTransport emits it synchronously from open(), TcpTransport emits async)
 }
 
 void VCPMainWindow::disconnectFromDevice() {
@@ -311,7 +313,6 @@ void VCPMainWindow::onConnectionChanged(bool connected) {
 void VCPMainWindow::updateConnectionUI(bool connected) {
     m_connectAction->setEnabled(!connected);
     m_disconnectAction->setEnabled(connected);
-
     if (connected) {
         m_statusLabel->setText(m_useTcp
             ? QString("Connected: %1:%2").arg(m_tcpHost).arg(m_tcpPort)
@@ -330,7 +331,6 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     m_swrGauge->setValue(data.swr);
     m_swrGauge->setAlarmPoint(data.alarmSWR());
 
-    // Impedance
     m_zLabel->setText(QString("%1\u03A9").arg(data.impedance, 0, 'f', 1));
     m_phaseLabel->setText(QString("%1\u00B0").arg(data.phase, 0, 'f', 1));
     m_rLabel->setText(QString("%1\u03A9").arg(data.resistance(), 0, 'f', 1));
@@ -340,7 +340,7 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     if (!data.callsign.trimmed().isEmpty())
         m_callsignLabel->setText(data.callsign.trimmed());
 
-    // Alarm button — only update when state changes
+    // Alarm button — only update stylesheet on state change
     bool alarmTripped = data.alarmSWR() > 0 && data.swr >= data.alarmSWR()
                         && data.power > Style::SWR::AlarmPowerThreshold;
     if (data.alarmSetPoint != m_lastAlarmSetPoint) {
@@ -349,7 +349,8 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     }
     if (alarmTripped != m_lastAlarmTripped) {
         m_lastAlarmTripped = alarmTripped;
-        m_alarmBtn->setStyleSheet(alarmTripped ? Style::buttonAlarmTripped() : Style::buttonNormal());
+        m_alarmBtn->setStyleSheet(alarmTripped ? Style::buttonCompactAlarm()
+                                               : Style::buttonCompact());
     }
 
     m_modeBtn->setText(data.modeString());
@@ -376,20 +377,20 @@ void VCPMainWindow::onRawResponse(const QString &resp) { m_rawLabel->setText(res
 void VCPMainWindow::onParseError(const QString &err) { m_statusLabel->setText("Parse error: " + err); }
 
 void VCPMainWindow::onRangeClicked() {
-    static const double ranges[] = {
+    static constexpr double ranges[] = {
         Style::PowerRange::Low, Style::PowerRange::Mid, Style::PowerRange::High, 0.0
     };
-    static const char *labels[] = {"25", "250", "2500", "Auto"};
-    constexpr int numRanges = 4;
-    static int idx = 0;
-    idx = (idx + 1) % numRanges;
-    m_autoRange = (idx == numRanges - 1);
+    static constexpr const char *labels[] = {"25", "250", "2500", "Auto"};
+    constexpr int numRanges = static_cast<int>(std::size(ranges));
+
+    m_rangeIdx = (m_rangeIdx + 1) % numRanges;
+    m_autoRange = (m_rangeIdx == numRanges - 1);
     if (!m_autoRange) {
-        m_currentMaxPower = ranges[idx];
+        m_currentMaxPower = ranges[m_rangeIdx];
         m_powerGauge->setMaxValue(m_currentMaxPower);
         m_refGauge->setMaxValue(m_currentMaxPower);
     }
-    m_rangeBtn->setText(QString("Range: %1").arg(labels[idx]));
+    m_rangeBtn->setText(QString("Range: %1").arg(labels[m_rangeIdx]));
 }
 
 void VCPMainWindow::onAlarmClicked() { if (m_protocol) m_protocol->incrementAlarm(); }
@@ -409,8 +410,8 @@ void VCPMainWindow::saveSettings() {
 
 void VCPMainWindow::loadSettings() {
     QSettings s("AI5QK", "QK-LP100A");
-    m_serialPort = s.value("serial/port", "cu.usbserial-BG01CJ2P").toString();
-    m_tcpHost = s.value("tcp/host", "192.168.1.100").toString();
+    m_serialPort = s.value("serial/port", "").toString();
+    m_tcpHost = s.value("tcp/host", Style::Protocol::DefaultTcpHost).toString();
     m_tcpPort = s.value("tcp/port", Style::Protocol::DefaultTcpPort).toUInt();
     m_pollInterval = s.value("poll/interval", Style::Protocol::DefaultPollMs).toInt();
     m_useTcp = s.value("connection/useTcp", false).toBool();

@@ -2,7 +2,6 @@
 
 #include "ITransport.h"
 #include <QSerialPort>
-#include <QSerialPortInfo>
 
 class SerialTransport : public ITransport {
     Q_OBJECT

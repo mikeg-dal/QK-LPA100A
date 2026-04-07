@@ -5,7 +5,6 @@
 PowerGauge::PowerGauge(QWidget *parent)
     : QWidget(parent)
 {
-    setAttribute(Qt::WA_TranslucentBackground);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(&m_decayTimer, &QTimer::timeout, this, &PowerGauge::decayValues);
     m_decayTimer.start(DecayIntervalMs);
@@ -16,7 +15,7 @@ QSize PowerGauge::minimumSizeHint() const {
 }
 
 QSize PowerGauge::sizeHint() const {
-    return QSize(500, Style::Layout::MeterRowHeight);
+    return QSize(Style::Layout::MeterPreferredWidth, Style::Layout::MeterRowHeight);
 }
 
 void PowerGauge::setValue(double watts) {
@@ -40,6 +39,8 @@ void PowerGauge::setMaxValue(double max) {
 }
 
 void PowerGauge::decayValues() {
+    if (!isVisible()) return;
+
     bool changed = false;
     if (m_displayWatts > m_targetWatts + 0.01) {
         m_displayWatts -= (m_displayWatts - m_targetWatts) * DecayFraction;
@@ -73,23 +74,20 @@ void PowerGauge::paintEvent(QPaintEvent *) {
 
     const int h = height();
     const int w = width();
-
-    // Layout: [LabelBox 36px] [4px gap] [Bar ...] [4px gap] [Value 80px]
-    constexpr int labelBoxW = 36;
-    constexpr int valueW = 80;
-    constexpr int gap = 4;
-    constexpr int barH = 12;
-    constexpr int tickH = 2;
-
-    const int barX = labelBoxW + gap;
-    const int barW = w - barX - gap - valueW;
-    const int barY = (h - barH) / 2 - 3; // Centered vertically, nudged up for tick room
+    const int labelW  = Style::Layout::MeterLabelBoxWidth;
+    const int valueW  = Style::Layout::MeterValueWidth;
+    const int barGap  = Style::Layout::MeterBarGap;
+    const int barH    = Style::Layout::MeterBarHeight;
+    const int tickH   = Style::Layout::MeterTickHeight;
+    const int barX    = labelW + barGap;
+    const int barW    = w - barX - barGap - valueW;
+    const int barY    = (h - barH) / 2 - 3;
 
     double displayRatio = wattsToFrac(m_displayWatts);
-    double peakRatio = wattsToFrac(m_peakWatts);
+    double peakRatio    = wattsToFrac(m_peakWatts);
 
-    // --- Label box (fills vertical space like QK4) ---
-    QRect labelRect(1, 1, labelBoxW - 2, h - 4);
+    // Label box (fills vertical space)
+    QRect labelRect(1, 1, labelW - 2, h - 4);
     p.setPen(QColor(Style::Color::InactiveGray));
     p.setBrush(QColor(Style::Color::Background));
     p.drawRect(labelRect);
@@ -101,27 +99,27 @@ void PowerGauge::paintEvent(QPaintEvent *) {
     p.setPen(QColor(Style::Color::TextWhite));
     p.drawText(labelRect, Qt::AlignCenter, m_label);
 
-    // --- Bar track ---
+    // Bar track
     QRect trackRect(barX, barY, barW, barH);
     p.fillRect(trackRect, QColor(Style::Color::Background));
     p.setPen(QColor(Style::Color::InactiveGray));
     p.drawRect(trackRect);
 
-    // --- Filled bar ---
-    if (displayRatio > 0.001) {
+    // Filled bar
+    if (displayRatio > Style::Layout::MinBarFraction) {
         int fillW = static_cast<int>(barW * displayRatio);
         QLinearGradient grad = Style::meterGradient(barX, 0, barX + barW, 0);
         p.fillRect(barX + 1, barY + 1, fillW - 2, barH - 2, grad);
     }
 
-    // --- Peak hold ---
-    if (peakRatio > 0.01) {
+    // Peak hold
+    if (peakRatio > Style::Layout::MinPeakFraction) {
         int peakX = barX + static_cast<int>(barW * peakRatio);
         p.setPen(QPen(QColor(Style::Color::TextWhite), 1));
         p.drawLine(peakX, barY + 1, peakX, barY + barH - 1);
     }
 
-    // --- Scale ticks + labels ---
+    // Scale ticks + labels (log-positioned)
     struct Tick { double watts; const char *label; };
     QVector<Tick> ticks;
     if (m_maxValue <= Style::PowerRange::Low)
@@ -144,14 +142,15 @@ void PowerGauge::paintEvent(QPaintEvent *) {
         p.drawLine(x, barY, x, barY + tickH);
 
         p.setPen(QColor(Style::Color::TextGray));
-        int textW = 24;
-        int labelX = x - textW / 2;
+        int tw = Style::Layout::MeterScaleLabelW;
+        int labelX = x - tw / 2;
         if (i == 0) labelX = x - 2;
-        if (i == ticks.size() - 1) labelX = x - textW + 2;
-        p.drawText(labelX, scaleY, textW, 8, Qt::AlignCenter, ticks[i].label);
+        if (i == ticks.size() - 1) labelX = x - tw + 2;
+        p.drawText(labelX, scaleY, tw, Style::Layout::MeterScaleLabelH,
+                   Qt::AlignCenter, ticks[i].label);
     }
 
-    // --- Numeric value (right side) ---
+    // Numeric value (right side)
     QRect valueRect(w - valueW, 0, valueW, h);
     QFont valueFont(Style::Font::Monospace);
     valueFont.setPixelSize(Style::Font::Large);
@@ -168,4 +167,14 @@ void PowerGauge::paintEvent(QPaintEvent *) {
         valueText = QString::number(m_targetWatts, 'f', 2) + m_suffix;
 
     p.drawText(valueRect, Qt::AlignRight | Qt::AlignVCenter, valueText);
+}
+
+void PowerGauge::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    m_decayTimer.start(DecayIntervalMs);
+}
+
+void PowerGauge::hideEvent(QHideEvent *event) {
+    m_decayTimer.stop();
+    QWidget::hideEvent(event);
 }

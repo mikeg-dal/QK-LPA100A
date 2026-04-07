@@ -12,7 +12,7 @@ ConnectionDialog::ConnectionDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle("Connection Settings");
-    setMinimumWidth(380);
+    setMinimumWidth(Style::Layout::DialogMinWidth);
 
     auto *layout = new QVBoxLayout(this);
 
@@ -40,7 +40,7 @@ ConnectionDialog::ConnectionDialog(QWidget *parent)
     auto *tcpLayout = new QFormLayout(tcpGroup);
 
     m_hostEdit = new QLineEdit;
-    m_hostEdit->setPlaceholderText("192.168.1.100");
+    m_hostEdit->setPlaceholderText(Style::Protocol::DefaultTcpHost);
 
     m_tcpPortSpin = new QSpinBox;
     m_tcpPortSpin->setRange(Style::Protocol::MinTcpPort, Style::Protocol::MaxTcpPort);

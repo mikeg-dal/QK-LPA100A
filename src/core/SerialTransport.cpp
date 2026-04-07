@@ -1,10 +1,12 @@
 #include "core/SerialTransport.h"
+#include "Style.h"
+#include <QSerialPortInfo>
 #include <QDebug>
 
 SerialTransport::SerialTransport(QObject *parent)
     : ITransport(parent)
 {
-    m_serial.setBaudRate(115200);
+    m_serial.setBaudRate(Style::Protocol::DefaultBaud);
     m_serial.setDataBits(QSerialPort::Data8);
     m_serial.setParity(QSerialPort::NoParity);
     m_serial.setStopBits(QSerialPort::OneStop);
