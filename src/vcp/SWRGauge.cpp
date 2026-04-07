@@ -1,5 +1,6 @@
 #include "vcp/SWRGauge.h"
 #include "Style.h"
+#include <QDebug>
 #include <cmath>
 
 SWRGauge::SWRGauge(QWidget *parent)
@@ -19,14 +20,42 @@ QSize SWRGauge::sizeHint() const {
 }
 
 void SWRGauge::setValue(double swr) {
-    m_value = qBound(Style::SWR::Min, swr, Style::SWR::Max);
-    if (m_powerPresent && swr > 1.0)
+    if (m_powerPresent) {
+        // Reject SWR≈1.00 in ALL modes when we have a valid captured value.
+        // The device resets SWR to 1.00 immediately after TX stops, but may
+        // still report power (peak-held in Peak mode, or residual in others).
+        // SWR=1.00 with held/residual power is NOT a real measurement.
+        if (swr < 1.005) {
+            if (m_lastActiveSwr > 1.01 && m_swrHoldTicks > 0) {
+                qDebug() << "[SWR] REJECT swr=" << swr << "keeping" << m_lastActiveSwr
+                         << "holdTicks=" << m_swrHoldTicks;
+                update();
+                return;
+            }
+            // No capture yet — count consecutive 1.00 readings. Only accept after 3+
+            // consecutive polls (meaning it's truly a matched load, not a timing artifact)
+            m_unityCount++;
+            if (m_unityCount < 10) {  // Require ~800ms of continuous SWR=1.00 with power
+                qDebug() << "[SWR] DEFER swr=1.00 unityCount=" << m_unityCount;
+                update();
+                return;
+            }
+        } else {
+            m_unityCount = 0;  // Reset counter when we see non-unity SWR
+        }
+
+        qDebug() << "[SWR] ACCEPT swr=" << swr << "powerPresent=" << m_powerPresent
+                 << "peak=" << m_peakMode << "holdTicks=" << m_swrHoldTicks;
+
+        m_value = qBound(Style::SWR::Min, swr, Style::SWR::Max);
         m_lastActiveSwr = m_value;
-    double ratio = swrToFraction(m_value);
-    if (ratio > m_displayValue) m_displayValue = ratio;
-    if (ratio > m_peakValue) {
-        m_peakValue = ratio;
-        m_peakHoldTicks = PeakHoldTicks;
+        m_swrHoldTicks = PeakHoldTicks;
+        double ratio = swrToFraction(m_value);
+        if (ratio > m_displayValue) m_displayValue = ratio;
+        if (ratio > m_peakValue) {
+            m_peakValue = ratio;
+            m_peakHoldTicks = PeakHoldTicks;
+        }
     }
     update();
 }
@@ -61,6 +90,13 @@ void SWRGauge::decayValues() {
             m_peakValue -= (m_peakValue - m_displayValue) * PeakDecayRate;
             if (m_peakValue < m_displayValue) m_peakValue = m_displayValue;
         }
+        changed = true;
+    }
+
+    // Count down SWR numeric hold timer (Avg/Peak modes).
+    // Tune mode: never count down — hold permanently.
+    if (m_swrHoldTicks > 0 && !m_powerPresent && !m_tuneMode) {
+        m_swrHoldTicks--;
         changed = true;
     }
     if (changed) update();
@@ -156,27 +192,40 @@ void SWRGauge::paintEvent(QPaintEvent *) {
     valueFont.setBold(true);
     p.setFont(valueFont);
 
-    // SWR numeric display:
-    // - When power present: show current SWR, color-coded
-    // - Tune mode + no power: hold last active SWR
-    // - Other modes + no power: show "-.--"
+    // SWR numeric display — mode-specific behavior:
+    //
+    // ALL MODES during TX: show current SWR
+    // AVERAGE ("w") after TX: hold last SWR for peak hold period, then "-.--"
+    // PEAK ("W") after TX:   hold last SWR for peak hold period, then "-.--"
+    // TUNE ("T") after TX:   hold last SWR permanently (tuning reference)
+    //
     QString swrText;
-    double displaySwr = m_value;
+    double displaySwr = m_lastActiveSwr;
+    bool showValue = false;
 
-    if (!m_powerPresent) {
-        if (m_tuneMode) {
-            displaySwr = m_lastActiveSwr;  // Hold in Tune mode
-        } else {
-            swrText = "-.--";  // Blank in Avg/Peak when not transmitting
-        }
+    if (m_powerPresent) {
+        // Actively transmitting — all modes show current SWR
+        displaySwr = m_value;
+        showValue = true;
+    } else if (m_tuneMode) {
+        // Tune: hold last value permanently until next TX
+        displaySwr = m_lastActiveSwr;
+        showValue = (m_lastActiveSwr > 1.0);
+    } else if (m_swrHoldTicks > 0) {
+        // Avg and Peak: hold during peak hold period, then "-.--"
+        displaySwr = m_lastActiveSwr;
+        showValue = (m_lastActiveSwr > 1.0);
     }
+    // Hold expired with no power: showValue stays false → "-.--"
 
-    if (swrText.isEmpty()) {
+    if (showValue) {
         swrText = QString::number(displaySwr, 'f', 2);
+    } else {
+        swrText = "-.--";
     }
 
-    if (!m_powerPresent && !m_tuneMode) {
-        p.setPen(QColor(Style::Color::TextGray));  // Dimmed when inactive
+    if (!showValue) {
+        p.setPen(QColor(Style::Color::TextGray));
     } else if (displaySwr < Style::SWR::GoodLimit) {
         p.setPen(QColor(Style::Color::StatusGreen));
     } else if (displaySwr < Style::SWR::WarningLimit) {

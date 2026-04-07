@@ -95,4 +95,5 @@ private:
     int m_rangeIdx = 3;  // Start at Auto (index 3 of 4 choices)
     int m_lastAlarmSetPoint = -1;
     bool m_lastAlarmTripped = false;
+    double m_lastReportedPower = 0.0;
 };

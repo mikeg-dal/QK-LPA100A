@@ -400,6 +400,9 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
 
     // Mode suffix on power readout: "w" for Avg, "W" for Peak, "T" for Tune
     // Matches the LP-100A front panel convention
+    bool isPeakMode = (data.peakHoldMode == 1);
+    m_powerGauge->setPeakMode(isPeakMode);
+    m_refGauge->setPeakMode(isPeakMode);
     switch (data.peakHoldMode) {
         case 0: m_powerGauge->setModeSuffix("w"); break;  // Average
         case 1: m_powerGauge->setModeSuffix("W"); break;  // Peak
@@ -408,11 +411,30 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
 
     m_modeLabel->setText(data.modeString());
 
-    // SWR: track whether power is present and which mode we're in
-    bool powerPresent = data.power > Style::SWR::AlarmPowerThreshold;
+    // SWR validity logic
+    bool swrValid;
+    if (data.swr > 1.005) {
+        swrValid = data.power > 0.05;
+    } else {
+        swrValid = data.power > 2.0 && m_lastReportedPower > 2.0;
+    }
+
+    // Debug: log every poll where power or SWR changed
+    static double lastLogPwr = -1, lastLogSwr = -1;
+    if (data.power != lastLogPwr || data.swr != lastLogSwr) {
+        qDebug() << "[POLL] Pwr=" << data.power << "SWR=" << data.swr
+                 << "Mode=" << data.modeString()
+                 << "swrValid=" << swrValid
+                 << "lastPwr=" << m_lastReportedPower;
+        lastLogPwr = data.power;
+        lastLogSwr = data.swr;
+    }
+
+    m_lastReportedPower = data.power;
     bool tuneMode = (data.peakHoldMode == 2);
-    m_swrGauge->setPowerPresent(powerPresent);
+    m_swrGauge->setPowerPresent(swrValid);
     m_swrGauge->setTuneMode(tuneMode);
+    m_swrGauge->setPeakMode(isPeakMode);
     m_swrGauge->setValue(data.swr);
     m_swrGauge->setAlarmPoint(data.alarmSWR());
 

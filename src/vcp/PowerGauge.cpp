@@ -42,6 +42,13 @@ void PowerGauge::decayValues() {
     if (!isVisible()) return;
 
     bool changed = false;
+
+    // Snap to zero when target is zero and display has decayed to negligible
+    if (m_targetWatts < 0.01 && m_displayWatts < 0.05) {
+        if (m_displayWatts > 0) { m_displayWatts = 0; changed = true; }
+        if (m_peakWatts > 0 && m_peakHoldTicks <= 0) { m_peakWatts = 0; changed = true; }
+    }
+
     if (m_displayWatts > m_targetWatts + 0.01) {
         m_displayWatts -= (m_displayWatts - m_targetWatts) * DecayFraction;
         if (m_displayWatts < m_targetWatts) m_displayWatts = m_targetWatts;
@@ -158,9 +165,10 @@ void PowerGauge::paintEvent(QPaintEvent *) {
     p.setFont(valueFont);
     p.setPen(QColor(Style::Color::TextWhite));
 
-    // Show decaying display value, not instant target
-    double showWatts = m_displayWatts;
-    if (showWatts < 0.005) showWatts = 0.0; // Snap to zero when nearly decayed
+    // In Peak mode: show peak watts (holds then decays, matching SWR behavior)
+    // In Avg/Tune: show decaying display watts
+    double showWatts = m_peakMode ? m_peakWatts : m_displayWatts;
+    if (showWatts < 0.005) showWatts = 0.0;
 
     QString valueText;
     if (showWatts >= 1000)

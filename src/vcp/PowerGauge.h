@@ -16,6 +16,7 @@ public:
     void setLabel(const QString &label) { m_label = label; update(); }
     void setSuffix(const QString &suffix) { m_suffix = suffix; update(); }
     void setModeSuffix(const QString &s) { m_modeSuffix = s; update(); }
+    void setPeakMode(bool peak) { m_peakMode = peak; }
 
     double value() const { return m_targetWatts; }
     double maxValue() const { return m_maxValue; }
@@ -40,10 +41,11 @@ private:
     QString m_label = "Pwr";
     QString m_suffix = "W";
     QString m_modeSuffix;  // "w" for Avg, "W" for Peak, "T" for Tune
+    bool m_peakMode = false;
     QTimer m_decayTimer;
 
     static constexpr int DecayIntervalMs = 50;
-    static constexpr int PeakHoldTicks = 10;
-    static constexpr double DecayFraction = 0.15;
-    static constexpr double PeakDecayFraction = 0.08;
+    static constexpr int PeakHoldTicks = 40;  // 2 sec hold (matches LP-100A default)
+    static constexpr double DecayFraction = 0.25;      // Faster bar decay
+    static constexpr double PeakDecayFraction = 0.15;   // Faster peak indicator decay
 };
