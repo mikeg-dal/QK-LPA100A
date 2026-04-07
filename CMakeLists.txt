@@ -16,7 +16,7 @@ set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
 set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 set(MACOSX_BUNDLE_ICON_FILE "AppIcon.icns")
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort Network Charts)
 
 set(CORE_SOURCES
     src/core/LP100AProtocol.cpp
@@ -49,6 +49,18 @@ set(VCP_HEADERS
     src/vcp/RigSetupDialog.h
 )
 
+set(PLOT_SOURCES
+    src/plot/PlotWidget.cpp
+    src/plot/SweepData.cpp
+    src/plot/SweepEngine.cpp
+)
+
+set(PLOT_HEADERS
+    src/plot/PlotWidget.h
+    src/plot/SweepData.h
+    src/plot/SweepEngine.h
+)
+
 set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/src/resources/icons/AppIcon.icns")
 set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources")
@@ -59,6 +71,8 @@ qt_add_executable(QK-LP100A MACOSX_BUNDLE
     ${CORE_HEADERS}
     ${VCP_SOURCES}
     ${VCP_HEADERS}
+    ${PLOT_SOURCES}
+    ${PLOT_HEADERS}
     ${APP_ICON_MACOS}
 )
 
@@ -67,5 +81,6 @@ target_link_libraries(QK-LP100A PRIVATE
     Qt6::Widgets
     Qt6::SerialPort
     Qt6::Network
+    Qt6::Charts
     /opt/homebrew/lib/libhamlib.dylib
 )

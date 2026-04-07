@@ -2,6 +2,11 @@
 #include <QDebug>
 #include <hamlib/rig.h>
 
+// Suppress ALL Hamlib debug output at module load time
+static struct HamlibDebugInit {
+    HamlibDebugInit() { rig_set_debug(RIG_DEBUG_NONE); }
+} s_hamlibDebugInit;
+
 // Callback for rig_list_foreach to populate the rig list
 static int rigListCallback(const rig_caps *caps, void *data) {
     auto *list = static_cast<QList<HamlibRig::RigInfo> *>(data);
@@ -34,6 +39,7 @@ HamlibRig::~HamlibRig() {
 
 QList<HamlibRig::RigInfo> HamlibRig::availableRigs() {
     QList<RigInfo> rigs;
+    rig_set_debug(RIG_DEBUG_NONE);
     rig_load_all_backends();
     rig_list_foreach(rigListCallback, &rigs);
 
@@ -50,6 +56,7 @@ QList<HamlibRig::RigInfo> HamlibRig::availableRigs() {
 bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
     close();
 
+    rig_set_debug(RIG_DEBUG_NONE);
     m_rig = rig_init(modelId);
     if (!m_rig) {
         m_errorString = QString("Failed to init rig model %1").arg(modelId);
@@ -61,13 +68,19 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
     strncpy(m_rig->state.rigport.pathname, port.toUtf8().constData(),
             sizeof(m_rig->state.rigport.pathname) - 1);
 
+    // Detect TCP connections — port contains ':' (e.g. "192.168.1.10:9200")
+    if (port.contains(':')) {
+        m_rig->state.rigport.type.rig = RIG_PORT_NETWORK;
+    }
+
     if (baudRate > 0) {
         m_rig->state.rigport.parm.serial.rate = baudRate;
     }
 
+    rig_set_debug(RIG_DEBUG_NONE);
     int ret = rig_open(m_rig);
     if (ret != RIG_OK) {
-        setError(ret, "rig_open");
+        setError(ret, QString("rig_open (model=%1 port=%2)").arg(modelId).arg(port));
         rig_cleanup(m_rig);
         m_rig = nullptr;
         return false;
@@ -135,6 +148,15 @@ QString HamlibRig::getMode() {
     int ret = rig_get_mode(m_rig, RIG_VFO_CURR, &mode, &width);
     if (ret != RIG_OK) { setError(ret, "get_mode"); return {}; }
     return QString::fromUtf8(rig_strrmode(mode));
+}
+
+bool HamlibRig::setRFPower(double level) {
+    if (!m_rig) return false;
+    value_t val;
+    val.f = static_cast<float>(qBound(0.0, level, 1.0));
+    int ret = rig_set_level(m_rig, RIG_VFO_CURR, RIG_LEVEL_RFPOWER, val);
+    if (ret != RIG_OK) { setError(ret, "set_rfpower"); return false; }
+    return true;
 }
 
 QString HamlibRig::rigName() const {

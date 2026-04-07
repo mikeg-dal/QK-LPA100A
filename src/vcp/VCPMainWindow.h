@@ -4,7 +4,6 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
-#include <QStackedWidget>
 #include "core/ITransport.h"
 #include "core/LP100AProtocol.h"
 #include "core/HamlibRig.h"
@@ -36,14 +35,7 @@ private slots:
     void onModeClicked();
     void setViewStyle(ViewStyle style);
 
-    // Rig
-    void showRigSetup();
-    void disconnectRig();
-    void pttTest();
-
-    // Mode switching
-    void switchToVCP();
-    void switchToPlot();
+    void openPlotWindow();
 
 private:
     void createUI();
@@ -88,14 +80,12 @@ private:
     // Menu actions
     QAction *m_connectAction;
     QAction *m_disconnectAction;
-    QAction *m_rigConnectAction;
-    QAction *m_rigDisconnectAction;
-    QAction *m_pttTestAction;
+    QAction *m_compactAction;
+    QAction *m_standardAction;
+    QAction *m_fullAction;
 
-    // Mode switching
-    QStackedWidget *m_stack;
-    QWidget *m_vcpWidget;          // VCP mode content
-    QWidget *m_plotPlaceholder;    // Plot mode (placeholder until PlotWidget is built)
+    // Plot window (separate from VCP)
+    QWidget *m_plotWindow = nullptr;
     HamlibRig *m_hamlib = nullptr;
     QLabel *m_rigStatusLabel;
 

@@ -37,6 +37,7 @@ public:
     bool getPTT();
     bool setMode(const QString &mode, int passband = 0);
     QString getMode();
+    bool setRFPower(double level); // 0.0-1.0
 
     // Info
     QString errorString() const { return m_errorString; }

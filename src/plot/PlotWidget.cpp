@@ -1,0 +1,506 @@
+#include "plot/PlotWidget.h"
+#include "plot/SweepEngine.h"
+#include "core/HamlibRig.h"
+#include "core/LP100AProtocol.h"
+#include "core/SerialTransport.h"
+#include "Style.h"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QSettings>
+#include <cmath>
+
+PlotWidget::PlotWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    auto *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(4);
+    mainLayout->setContentsMargins(8, 4, 8, 4);
+
+    createChart();
+    mainLayout->addWidget(m_chartView, 1);
+
+    createControls();
+
+    // === Row 1: Sweep parameters ===
+    auto *row1 = new QHBoxLayout;
+    row1->setSpacing(4);
+    row1->addWidget(new QLabel("Start Freq"));
+    row1->addWidget(m_startFreq);
+    row1->addWidget(new QLabel("Stop Freq"));
+    row1->addWidget(m_stopFreq);
+    row1->addWidget(new QLabel("Step"));
+    row1->addWidget(m_stepCombo);
+    row1->addWidget(m_displayCombo);
+    row1->addStretch();
+    row1->addWidget(m_runBtn);
+    row1->addWidget(m_resetBtn);
+    row1->addWidget(m_stopBtn);
+    row1->addWidget(m_signCheck);
+    row1->addWidget(m_splineCheck);
+    row1->addWidget(m_bestFitCheck);
+    mainLayout->addLayout(row1);
+
+    // === Row 2: Live readout ===
+    auto *row2 = new QHBoxLayout;
+    row2->setSpacing(6);
+    auto addReadout = [&](const QString &name, QLabel *&label) {
+        auto *n = new QLabel(name);
+        QFont nf(Style::Font::Family); nf.setPixelSize(Style::Font::Small);
+        n->setFont(nf);
+        n->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
+        row2->addWidget(n);
+        label = new QLabel("--");
+        QFont vf(Style::Font::Monospace); vf.setPixelSize(Style::Font::Medium); vf.setBold(true);
+        label->setFont(vf);
+        label->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
+        label->setMinimumWidth(36);
+        row2->addWidget(label);
+    };
+    addReadout("Freq", m_freqLabel);
+    addReadout("Pwr", m_pwrLabel);
+    addReadout("Z", m_zLabel);
+    addReadout("Ph", m_phLabel);
+    addReadout("R", m_rLabel);
+    addReadout("X", m_xLabel);
+    addReadout("SWR", m_swrLabel);
+    row2->addStretch();
+    mainLayout->addLayout(row2);
+
+    // === Row 3: Setup — Sample, Settle, TX Mode, Rig, Port, Baud (like Windows Plot) ===
+    auto *row3 = new QHBoxLayout;
+    row3->setSpacing(4);
+    row3->addWidget(new QLabel("Sample"));
+    row3->addWidget(m_sampleCombo);
+    row3->addWidget(new QLabel("Settle"));
+    row3->addWidget(m_settleCombo);
+    row3->addWidget(new QLabel("TX Mode"));
+    row3->addWidget(m_txModeCombo);
+    row3->addWidget(m_powerSpin);
+    row3->addSpacing(8);
+    row3->addWidget(m_rigCombo);
+    row3->addWidget(m_rigPortCombo);
+    row3->addWidget(m_rigBaudCombo);
+    row3->addWidget(m_rigConnectBtn);
+    mainLayout->addLayout(row3);
+
+    // === Row 4: Status + raw string ===
+    auto *row4 = new QHBoxLayout;
+    row4->setSpacing(4);
+    m_rawLabel = new QLabel;
+    QFont rawFont(Style::Font::Monospace); rawFont.setPixelSize(Style::Font::Tiny);
+    m_rawLabel->setFont(rawFont);
+    m_rawLabel->setStyleSheet(
+        QString("color: %1; background: %2; border: 1px solid %3; padding: 1px 3px;")
+            .arg(Style::Color::InactiveGray, Style::Color::DarkBackground, Style::Color::PanelBorder));
+
+    m_statusLabel = new QLabel("Ready");
+    m_statusLabel->setFont(rawFont);
+    m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
+
+    row4->addWidget(m_rawLabel, 1);
+    row4->addWidget(m_statusLabel);
+    mainLayout->addLayout(row4);
+
+    // === Connections ===
+    connect(m_displayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PlotWidget::onDisplayModeChanged);
+    connect(m_splineCheck, &QCheckBox::toggled, this, &PlotWidget::updateChart);
+    connect(m_bestFitCheck, &QCheckBox::toggled, this, &PlotWidget::updateChart);
+    connect(m_signCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked && !m_data.isEmpty()) { m_data.autoCorrectSigns(); updateChart(); }
+    });
+
+    // Rig connect button
+    connect(m_rigConnectBtn, &QPushButton::clicked, this, [this]() {
+        if (m_rig && m_rig->isOpen()) {
+            emit rigDisconnectRequested();
+            m_rigConnectBtn->setText("Connect Rig");
+            m_statusLabel->setText("Rig disconnected");
+        } else {
+            int modelId = m_rigCombo->currentData().toInt();
+            QString port = m_rigPortCombo->currentText().trimmed();
+            int baud = m_rigBaudCombo->currentText().toInt();
+            m_statusLabel->setText("Connecting to rig...");
+            emit rigConnectRequested(modelId, port, baud);
+            // Check if it worked
+            QTimer::singleShot(500, this, [this]() {
+                if (m_rig && m_rig->isOpen()) {
+                    m_rigConnectBtn->setText("Disconnect Rig");
+                    m_statusLabel->setText("Rig: " + m_rig->rigName());
+                } else {
+                    m_statusLabel->setText("Rig connect failed");
+                }
+            });
+        }
+    });
+
+    // Run button
+    connect(m_runBtn, &QPushButton::clicked, this, [this]() {
+        if (!m_rig || !m_rig->isOpen()) {
+            m_statusLabel->setText("Rig not connected");
+            return;
+        }
+        if (!m_lp100a) {
+            m_statusLabel->setText("LP-100A not connected");
+            return;
+        }
+        if (m_sweepEngine && m_sweepEngine->isRunning()) return;
+
+        m_data.clear();
+        updateChart();
+
+        SweepParams params;
+        params.startMHz = startFreqMHz();
+        params.stopMHz = stopFreqMHz();
+        params.stepKHz = stepKHz();
+        params.settleTimeMs = m_settleCombo->currentData().toInt();
+        params.sampleTimeMs = m_sampleCombo->currentData().toInt();
+        params.txMode = m_txModeCombo->currentText();
+        params.rfPower = m_powerSpin->value();
+
+        m_sweepEngine = new SweepEngine(m_rig, m_lp100a, this);
+        connect(m_sweepEngine, &SweepEngine::pointMeasured, this, [this](const SweepPoint &pt) {
+            m_data.addPoint(pt); updateChart(); updateReadout(pt);
+        });
+        connect(m_sweepEngine, &SweepEngine::progress, this,
+                [this](int cur, int total, double freq) {
+            m_statusLabel->setText(QString("Sweeping %1 MHz (%2/%3)")
+                .arg(freq, 0, 'f', 3).arg(cur).arg(total));
+        });
+        connect(m_sweepEngine, &SweepEngine::sweepFinished, this, [this]() {
+            m_statusLabel->setText(QString("Complete — %1 pts").arg(m_data.count()));
+            if (m_signCheck->isChecked()) { m_data.autoCorrectSigns(); updateChart(); }
+            m_sweepEngine->deleteLater(); m_sweepEngine = nullptr;
+        });
+        connect(m_sweepEngine, &SweepEngine::sweepError, this, [this](const QString &err) {
+            m_statusLabel->setText("Error: " + err);
+            m_sweepEngine->deleteLater(); m_sweepEngine = nullptr;
+        });
+        m_sweepEngine->start(params);
+    });
+
+    connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
+        if (m_sweepEngine) m_sweepEngine->stop();
+        m_statusLabel->setText("Stopped");
+    });
+
+    connect(m_resetBtn, &QPushButton::clicked, this, [this]() {
+        m_data.clear(); updateChart();
+        m_statusLabel->setText("Ready");
+    });
+}
+
+void PlotWidget::createControls() {
+    m_startFreq = new QDoubleSpinBox;
+    m_startFreq->setRange(0.1, 60.0);
+    m_startFreq->setDecimals(3);
+    m_startFreq->setSuffix(" MHz");
+    m_startFreq->setValue(28.0);
+
+    m_stopFreq = new QDoubleSpinBox;
+    m_stopFreq->setRange(0.1, 60.0);
+    m_stopFreq->setDecimals(3);
+    m_stopFreq->setSuffix(" MHz");
+    m_stopFreq->setValue(29.7);
+
+    m_stepCombo = new QComboBox;
+    m_stepCombo->addItem("10 kHz", 10);
+    m_stepCombo->addItem("25 kHz", 25);
+    m_stepCombo->addItem("50 kHz", 50);
+    m_stepCombo->addItem("100 kHz", 100);
+    m_stepCombo->addItem("200 kHz", 200);
+    m_stepCombo->addItem("500 kHz", 500);
+    m_stepCombo->setCurrentIndex(2);
+
+    m_displayCombo = new QComboBox;
+    m_displayCombo->addItem("R+jX", RplusJX);
+    m_displayCombo->addItem("Z & Phase", ZPhase);
+    m_displayCombo->addItem("SWR", SwrMode);
+    m_displayCombo->addItem("Return Loss", ReturnLoss);
+    m_displayCombo->addItem("Refl Coeff", ReflCoeff);
+    m_displayCombo->addItem("Smith", SmithChart);
+    m_displayCombo->setCurrentIndex(2);
+
+    m_runBtn = new QPushButton("Run");
+    m_resetBtn = new QPushButton("Reset");
+    m_stopBtn = new QPushButton("Stop");
+    for (auto *btn : {m_runBtn, m_resetBtn, m_stopBtn}) {
+        btn->setStyleSheet(Style::buttonCompact());
+        btn->setFixedHeight(Style::Layout::CompactButtonHeight);
+    }
+
+    m_signCheck = new QCheckBox("Sign");
+    m_splineCheck = new QCheckBox("Spline");
+    m_bestFitCheck = new QCheckBox("Best Fit");
+    m_signCheck->setChecked(true);
+
+    // Sweep settings
+    m_sampleCombo = new QComboBox;
+    m_sampleCombo->addItem("100ms", 100);
+    m_sampleCombo->addItem("500ms", 500);
+    m_sampleCombo->addItem("1 sec", 1000);
+    m_sampleCombo->addItem("2 sec", 2000);
+    m_sampleCombo->addItem("3 sec", 3000);
+    m_sampleCombo->setCurrentIndex(2);
+
+    m_settleCombo = new QComboBox;
+    m_settleCombo->addItem("50ms", 50);
+    m_settleCombo->addItem("100ms", 100);
+    m_settleCombo->addItem("500ms", 500);
+    m_settleCombo->addItem("1 sec", 1000);
+    m_settleCombo->addItem("2 sec", 2000);
+    m_settleCombo->addItem("3 sec", 3000);
+    m_settleCombo->addItem("5 sec", 5000);
+    m_settleCombo->setCurrentIndex(3);
+
+    m_txModeCombo = new QComboBox;
+    m_txModeCombo->addItems({"CW", "AM", "FSK", "USB", "LSB"});
+
+    // Rig setup (inline, like the Windows Plot bottom row)
+    m_rigCombo = new QComboBox;
+    m_rigCombo->setEditable(true);
+    m_rigCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_rigCombo->setMinimumWidth(120);
+    // Populate rig list
+    auto rigs = HamlibRig::availableRigs();
+    for (const auto &rig : rigs) {
+        QString display = QString("%1 %2").arg(rig.manufacturer, rig.model).trimmed();
+        m_rigCombo->addItem(display, rig.modelId);
+        m_rigList.append({rig.modelId, display});
+    }
+    // Default to K4 if available
+    for (int i = 0; i < m_rigCombo->count(); ++i) {
+        if (m_rigCombo->itemData(i).toInt() == 2047) {
+            m_rigCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    m_rigPortCombo = new QComboBox;
+    m_rigPortCombo->setEditable(true);
+    m_rigPortCombo->setMinimumWidth(100);
+    for (const auto &port : SerialTransport::availablePorts())
+        m_rigPortCombo->addItem(port);
+
+    m_rigBaudCombo = new QComboBox;
+    m_rigBaudCombo->addItems({"4800", "9600", "19200", "38400", "57600", "115200"});
+    m_rigBaudCombo->setCurrentText("38400");
+
+    m_powerSpin = new QDoubleSpinBox;
+    m_powerSpin->setRange(0.01, 1.0);
+    m_powerSpin->setSingleStep(0.05);
+    m_powerSpin->setValue(0.10);
+    m_powerSpin->setDecimals(2);
+    m_powerSpin->setPrefix("Pwr ");
+
+    m_rigConnectBtn = new QPushButton("Connect Rig");
+    m_rigConnectBtn->setStyleSheet(Style::buttonCompact());
+    m_rigConnectBtn->setFixedHeight(Style::Layout::CompactButtonHeight);
+}
+
+void PlotWidget::createChart() {
+    m_chart = new QChart;
+    m_chart->setBackgroundBrush(QColor(Style::Color::Background));
+    m_chart->setPlotAreaBackgroundBrush(QColor(Style::Color::DarkBackground));
+    m_chart->setPlotAreaBackgroundVisible(true);
+    m_chart->legend()->hide();
+    m_chart->setMargins(QMargins(4, 4, 4, 4));
+
+    QFont titleFont(Style::Font::Family);
+    titleFont.setPixelSize(14);
+    titleFont.setBold(true);
+    m_chart->setTitleFont(titleFont);
+    m_chart->setTitleBrush(QColor(Style::Color::TextWhite));
+    m_chart->setTitle("Standing Wave Ratio");
+
+    m_axisX = new QValueAxis;
+    m_axisX->setTitleText("Frequency - MHz");
+    m_axisX->setLabelFormat("%.1f");
+    m_axisX->setRange(28.0, 29.8);
+    m_axisX->setGridLineColor(QColor(Style::Color::PanelBorder));
+    m_axisX->setLabelsColor(QColor(Style::Color::TextGray));
+    m_axisX->setTitleBrush(QColor(Style::Color::TextGray));
+    m_chart->addAxis(m_axisX, Qt::AlignBottom);
+
+    m_axisY1 = new QValueAxis;
+    m_axisY1->setRange(1.0, 3.0);
+    m_axisY1->setLabelFormat("%.1f");
+    m_axisY1->setGridLineColor(QColor(Style::Color::PanelBorder));
+    m_axisY1->setLabelsColor(QColor(Style::Color::TextGray));
+    m_axisY1->setTitleBrush(QColor(Style::Color::TextGray));
+    m_chart->addAxis(m_axisY1, Qt::AlignLeft);
+
+    m_axisY2 = new QValueAxis;
+    m_axisY2->setGridLineColor(QColor(Style::Color::PanelBorder));
+    m_axisY2->setLabelsColor(QColor(Style::Color::TextGray));
+    m_axisY2->setTitleBrush(QColor(Style::Color::TextGray));
+    m_chart->addAxis(m_axisY2, Qt::AlignRight);
+    m_axisY2->setVisible(false);
+
+    m_chartView = new QChartView(m_chart);
+    m_chartView->setRenderHint(QPainter::Antialiasing);
+    m_chartView->setRubberBand(QChartView::VerticalRubberBand);
+    m_chartView->setMinimumSize(200, 150);
+    m_chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+double PlotWidget::startFreqMHz() const { return m_startFreq->value(); }
+double PlotWidget::stopFreqMHz() const { return m_stopFreq->value(); }
+double PlotWidget::stepKHz() const { return m_stepCombo->currentData().toDouble(); }
+
+void PlotWidget::onDisplayModeChanged() {
+    m_displayMode = static_cast<DisplayMode>(m_displayCombo->currentData().toInt());
+    updateChart();
+}
+
+void PlotWidget::updateReadout(const SweepPoint &pt) {
+    m_freqLabel->setText(QString::number(pt.freqMHz, 'f', 3));
+    m_pwrLabel->setText(QString::number(pt.power, 'f', 1));
+    m_zLabel->setText(QString::number(pt.impedance, 'f', 1));
+    m_phLabel->setText(QString::number(pt.phase, 'f', 1));
+    m_rLabel->setText(QString::number(pt.resistance, 'f', 1));
+    m_xLabel->setText(QString::number(pt.reactance, 'f', 1));
+    m_swrLabel->setText(QString::number(pt.swr, 'f', 2));
+}
+
+void PlotWidget::updateChart() {
+    m_chart->removeAllSeries();
+    m_chart->legend()->hide();
+    m_axisY2->setVisible(false);
+
+    switch (m_displayMode) {
+        case SwrMode:
+            m_chart->setTitle("Standing Wave Ratio");
+            m_axisY1->setTitleText(""); m_axisY1->setRange(1.0, 3.0); break;
+        case RplusJX:
+            m_chart->setTitle("R + jX");
+            m_axisY1->setTitleText("Ohms"); m_axisY2->setTitleText("Ohms");
+            m_axisY2->setVisible(true);
+            m_axisY1->setRange(0, 100); m_axisY2->setRange(-50, 50);
+            m_chart->legend()->show(); break;
+        case ZPhase:
+            m_chart->setTitle("Z Magnitude & Phase");
+            m_axisY1->setTitleText("Ohms"); m_axisY2->setTitleText("Degrees");
+            m_axisY2->setVisible(true);
+            m_axisY1->setRange(0, 100); m_axisY2->setRange(-90, 90);
+            m_chart->legend()->show(); break;
+        case ReturnLoss:
+            m_chart->setTitle("Return Loss");
+            m_axisY1->setTitleText("dB"); m_axisY1->setRange(0, 30); break;
+        case ReflCoeff:
+            m_chart->setTitle("Reflection Coefficient");
+            m_axisY1->setTitleText("|Γ|"); m_axisY1->setRange(0, 1.0); break;
+        case SmithChart:
+            m_chart->setTitle("Smith Chart"); break;
+    }
+
+    m_axisX->setRange(m_startFreq->value(), m_stopFreq->value());
+    if (m_data.isEmpty()) return;
+
+    double fMin = m_data.at(0).freqMHz;
+    double fMax = m_data.at(m_data.count() - 1).freqMHz;
+    m_axisX->setRange(fMin - 0.05, fMax + 0.05);
+
+    switch (m_displayMode) {
+        case SwrMode:     plotSWR(); break;
+        case RplusJX:     plotRplusJX(); break;
+        case ZPhase:      plotZPhase(); break;
+        case ReturnLoss:  plotReturnLoss(); break;
+        case ReflCoeff:   plotReflCoeff(); break;
+        case SmithChart:  break;
+    }
+}
+
+void PlotWidget::plotSWR() {
+    auto *series = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    series->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+
+    auto *dots = new QScatterSeries;
+    dots->setMarkerSize(6);
+    dots->setColor(QColor(Style::Color::AccentCyan));
+    dots->setBorderColor(QColor(Style::Color::AccentCyan));
+
+    double yMin = 999, yMax = 0;
+    for (int i = 0; i < m_data.count(); ++i) {
+        series->append(m_data.at(i).freqMHz, m_data.at(i).swr);
+        dots->append(m_data.at(i).freqMHz, m_data.at(i).swr);
+        yMin = qMin(yMin, m_data.at(i).swr); yMax = qMax(yMax, m_data.at(i).swr);
+    }
+    m_chart->addSeries(series); m_chart->addSeries(dots);
+    series->attachAxis(m_axisX); series->attachAxis(m_axisY1);
+    dots->attachAxis(m_axisX); dots->attachAxis(m_axisY1);
+    m_axisY1->setRange(qMax(1.0, yMin - 0.2), yMax + 0.2);
+}
+
+void PlotWidget::plotRplusJX() {
+    auto *rS = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    rS->setName("Resistance"); rS->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    auto *xS = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    xS->setName("Reactance"); xS->setPen(QPen(QColor(Style::Color::StatusRed), 2));
+
+    double rMin=999, rMax=-999, xMin=999, xMax=-999;
+    for (int i = 0; i < m_data.count(); ++i) {
+        rS->append(m_data.at(i).freqMHz, m_data.at(i).resistance);
+        xS->append(m_data.at(i).freqMHz, m_data.at(i).reactance);
+        rMin=qMin(rMin,m_data.at(i).resistance); rMax=qMax(rMax,m_data.at(i).resistance);
+        xMin=qMin(xMin,m_data.at(i).reactance); xMax=qMax(xMax,m_data.at(i).reactance);
+    }
+    m_chart->addSeries(rS); m_chart->addSeries(xS);
+    rS->attachAxis(m_axisX); rS->attachAxis(m_axisY1);
+    xS->attachAxis(m_axisX); xS->attachAxis(m_axisY2);
+    m_axisY1->setRange(qMax(0.0, rMin-10), rMax+10);
+    m_axisY2->setRange(xMin-10, xMax+10);
+}
+
+void PlotWidget::plotZPhase() {
+    auto *zS = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    zS->setName("Magnitude"); zS->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    auto *pS = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    pS->setName("Phase"); pS->setPen(QPen(QColor(Style::Color::StatusRed), 2));
+
+    double zMin=999, zMax=0, pMin=999, pMax=-999;
+    for (int i = 0; i < m_data.count(); ++i) {
+        zS->append(m_data.at(i).freqMHz, m_data.at(i).impedance);
+        pS->append(m_data.at(i).freqMHz, m_data.at(i).phase);
+        zMin=qMin(zMin,m_data.at(i).impedance); zMax=qMax(zMax,m_data.at(i).impedance);
+        pMin=qMin(pMin,m_data.at(i).phase); pMax=qMax(pMax,m_data.at(i).phase);
+    }
+    m_chart->addSeries(zS); m_chart->addSeries(pS);
+    zS->attachAxis(m_axisX); zS->attachAxis(m_axisY1);
+    pS->attachAxis(m_axisX); pS->attachAxis(m_axisY2);
+    m_axisY1->setRange(qMax(0.0, zMin-10), zMax+10);
+    m_axisY2->setRange(pMin-10, pMax+10);
+}
+
+void PlotWidget::plotReturnLoss() {
+    auto *s = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    s->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    double yMin=999, yMax=0;
+    for (int i = 0; i < m_data.count(); ++i) {
+        double rl = SweepData::returnLoss(m_data.at(i).swr);
+        s->append(m_data.at(i).freqMHz, rl);
+        yMin=qMin(yMin,rl); yMax=qMax(yMax,rl);
+    }
+    m_chart->addSeries(s);
+    s->attachAxis(m_axisX); s->attachAxis(m_axisY1);
+    m_axisY1->setRange(qMax(0.0, yMin-2), yMax+2);
+}
+
+void PlotWidget::plotReflCoeff() {
+    auto *s = m_splineCheck->isChecked()
+        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
+    s->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    for (int i = 0; i < m_data.count(); ++i) {
+        s->append(m_data.at(i).freqMHz, SweepData::reflectionCoeff(m_data.at(i).swr));
+    }
+    m_chart->addSeries(s);
+    s->attachAxis(m_axisX); s->attachAxis(m_axisY1);
+    m_axisY1->setRange(0, 1.0);
+}

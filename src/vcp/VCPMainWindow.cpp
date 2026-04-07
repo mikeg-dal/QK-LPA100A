@@ -1,6 +1,6 @@
 #include "vcp/VCPMainWindow.h"
 #include "vcp/ConnectionDialog.h"
-#include "vcp/RigSetupDialog.h"
+#include "plot/PlotWidget.h"
 #include "core/SerialTransport.h"
 #include "core/TcpTransport.h"
 #include "Style.h"
@@ -21,18 +21,6 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
     setWindowTitle("QK-LP100A");
 
     m_hamlib = new HamlibRig(this);
-    connect(m_hamlib, &HamlibRig::opened, this, [this]() {
-        m_rigStatusLabel->setText("Rig: " + m_hamlib->rigName());
-        m_rigConnectAction->setEnabled(false);
-        m_rigDisconnectAction->setEnabled(true);
-        m_pttTestAction->setEnabled(true);
-    });
-    connect(m_hamlib, &HamlibRig::closed, this, [this]() {
-        m_rigStatusLabel->setText("Rig: Disconnected");
-        m_rigConnectAction->setEnabled(true);
-        m_rigDisconnectAction->setEnabled(false);
-        m_pttTestAction->setEnabled(false);
-    });
     connect(m_hamlib, &HamlibRig::errorOccurred, this, [this](const QString &err) {
         m_rigStatusLabel->setText("Rig: " + err);
     });
@@ -41,6 +29,13 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
     createMenus();
     loadSettings();
     applyViewStyle();
+
+    // Sync style menu with loaded setting
+    switch (m_viewStyle) {
+        case Compact:  m_compactAction->setChecked(true); break;
+        case Standard: m_standardAction->setChecked(true); break;
+        case Full:     m_fullAction->setChecked(true); break;
+    }
 
     if (m_wasConnected && (m_useTcp ? !m_tcpHost.isEmpty() : !m_serialPort.isEmpty())) {
         QTimer::singleShot(0, this, &VCPMainWindow::connectToDevice);
@@ -55,13 +50,9 @@ VCPMainWindow::~VCPMainWindow() {
 }
 
 void VCPMainWindow::createUI() {
-    // --- Stacked widget for VCP / Plot modes ---
-    m_stack = new QStackedWidget;
-    setCentralWidget(m_stack);
-
-    // === VCP MODE WIDGET ===
-    m_vcpWidget = new QWidget;
-    auto *mainLayout = new QVBoxLayout(m_vcpWidget);
+    auto *central = new QWidget;
+    setCentralWidget(central);
+    auto *mainLayout = new QVBoxLayout(central);
     mainLayout->setSpacing(Style::Layout::MainSpacing);
     mainLayout->setContentsMargins(Style::Layout::MainMarginH, Style::Layout::MainMarginTop,
                                    Style::Layout::MainMarginH, Style::Layout::MainMarginBottom);
@@ -189,21 +180,6 @@ void VCPMainWindow::createUI() {
     m_rawLabel->setFixedHeight(Style::Layout::RawLabelHeight);
     mainLayout->addWidget(m_rawLabel);
 
-    m_stack->addWidget(m_vcpWidget);
-
-    // === PLOT MODE PLACEHOLDER ===
-    m_plotPlaceholder = new QWidget;
-    auto *plotLayout = new QVBoxLayout(m_plotPlaceholder);
-    auto *plotLabel = new QLabel("Plot Mode\n\nFrequency sweep and charting coming soon.\n\n"
-                                 "Connect a rig via Rig > Connect to Rig...");
-    plotLabel->setAlignment(Qt::AlignCenter);
-    QFont plotFont(Style::Font::Family);
-    plotFont.setPixelSize(Style::Font::Callsign);
-    plotLabel->setFont(plotFont);
-    plotLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
-    plotLayout->addWidget(plotLabel);
-    m_stack->addWidget(m_plotPlaceholder);
-
     // --- Status bar ---
     m_statusLabel = new QLabel("Disconnected");
     QFont statusFont(Style::Font::Family);
@@ -230,59 +206,35 @@ void VCPMainWindow::createUI() {
 }
 
 void VCPMainWindow::createMenus() {
-    // Mode menu
-    auto *modeMenu = menuBar()->addMenu("Mode");
-    auto *modeGroup = new QActionGroup(this);
-    modeGroup->setExclusive(true);
-
-    auto *vcpAction = modeMenu->addAction("VCP");
-    vcpAction->setCheckable(true);
-    vcpAction->setChecked(true);
-    vcpAction->setActionGroup(modeGroup);
-    connect(vcpAction, &QAction::triggered, this, &VCPMainWindow::switchToVCP);
-
-    auto *plotAction = modeMenu->addAction("Plot");
-    plotAction->setCheckable(true);
-    plotAction->setActionGroup(modeGroup);
-    connect(plotAction, &QAction::triggered, this, &VCPMainWindow::switchToPlot);
-
     // File menu
     auto *fileMenu = menuBar()->addMenu("File");
     m_connectAction = fileMenu->addAction("LP-100A Connect...", this, &VCPMainWindow::showConnectionDialog);
     m_disconnectAction = fileMenu->addAction("LP-100A Disconnect", this, &VCPMainWindow::disconnectFromDevice);
     m_disconnectAction->setEnabled(false);
     fileMenu->addSeparator();
+    fileMenu->addAction("Open Plot Window", this, &VCPMainWindow::openPlotWindow);
+    fileMenu->addSeparator();
     fileMenu->addAction("Quit", QKeySequence::Quit, qApp, &QApplication::quit);
-
-    // Rig menu
-    auto *rigMenu = menuBar()->addMenu("Rig");
-    m_rigConnectAction = rigMenu->addAction("Connect to Rig...", this, &VCPMainWindow::showRigSetup);
-    m_rigDisconnectAction = rigMenu->addAction("Disconnect Rig", this, &VCPMainWindow::disconnectRig);
-    m_rigDisconnectAction->setEnabled(false);
-    rigMenu->addSeparator();
-    m_pttTestAction = rigMenu->addAction("PTT Test", this, &VCPMainWindow::pttTest);
-    m_pttTestAction->setEnabled(false);
 
     // Style menu
     auto *styleMenu = menuBar()->addMenu("Style");
     auto *styleGroup = new QActionGroup(this);
     styleGroup->setExclusive(true);
 
-    auto *compactAction = styleMenu->addAction("Compact");
-    compactAction->setCheckable(true);
-    compactAction->setActionGroup(styleGroup);
-    connect(compactAction, &QAction::triggered, this, [this]() { setViewStyle(Compact); });
+    m_compactAction = styleMenu->addAction("Compact");
+    m_compactAction->setCheckable(true);
+    m_compactAction->setActionGroup(styleGroup);
+    connect(m_compactAction, &QAction::triggered, this, [this]() { setViewStyle(Compact); });
 
-    auto *standardAction = styleMenu->addAction("Standard");
-    standardAction->setCheckable(true);
-    standardAction->setActionGroup(styleGroup);
-    connect(standardAction, &QAction::triggered, this, [this]() { setViewStyle(Standard); });
+    m_standardAction = styleMenu->addAction("Standard");
+    m_standardAction->setCheckable(true);
+    m_standardAction->setActionGroup(styleGroup);
+    connect(m_standardAction, &QAction::triggered, this, [this]() { setViewStyle(Standard); });
 
-    auto *fullAction = styleMenu->addAction("Full");
-    fullAction->setCheckable(true);
-    fullAction->setChecked(true);
-    fullAction->setActionGroup(styleGroup);
-    connect(fullAction, &QAction::triggered, this, [this]() { setViewStyle(Full); });
+    m_fullAction = styleMenu->addAction("Full");
+    m_fullAction->setCheckable(true);
+    m_fullAction->setActionGroup(styleGroup);
+    connect(m_fullAction, &QAction::triggered, this, [this]() { setViewStyle(Full); });
 
     // Help menu
     auto *helpMenu = menuBar()->addMenu("Help");
@@ -297,43 +249,44 @@ void VCPMainWindow::createMenus() {
 
 // --- Mode switching ---
 
-void VCPMainWindow::switchToVCP() {
-    m_stack->setCurrentWidget(m_vcpWidget);
-    setWindowTitle("QK-LP100A — VCP");
-}
+void VCPMainWindow::openPlotWindow() {
+    if (m_plotWindow) {
+        m_plotWindow->raise();
+        m_plotWindow->activateWindow();
+        return;
+    }
 
-void VCPMainWindow::switchToPlot() {
-    m_stack->setCurrentWidget(m_plotPlaceholder);
-    setWindowTitle("QK-LP100A — Plot");
+    auto *plotWidget = new PlotWidget;
+    plotWidget->setRig(m_hamlib);
+    plotWidget->setLP100A(m_protocol);
+    plotWidget->setWindowTitle("QK-LP100A — Plot");
+    plotWidget->setAttribute(Qt::WA_DeleteOnClose);
+    plotWidget->resize(900, 650);
+    plotWidget->setStyleSheet(
+        QString("background: %1;").arg(Style::Color::Background));
+
+    connect(plotWidget, &PlotWidget::rigConnectRequested, this,
+            [this](int modelId, const QString &port, int baudRate) {
+        m_rigStatusLabel->setText("Rig: Connecting...");
+        if (m_hamlib->open(modelId, port, baudRate)) {
+            m_rigStatusLabel->setText("Rig: " + m_hamlib->rigName());
+        } else {
+            m_rigStatusLabel->setText("Rig: " + m_hamlib->errorString());
+        }
+    });
+    connect(plotWidget, &PlotWidget::rigDisconnectRequested, this, [this]() {
+        m_hamlib->close();
+        m_rigStatusLabel->setText("Rig: Disconnected");
+    });
+    connect(plotWidget, &QObject::destroyed, this, [this]() {
+        m_plotWindow = nullptr;
+    });
+
+    m_plotWindow = plotWidget;
+    plotWidget->show();
 }
 
 // --- Rig control ---
-
-void VCPMainWindow::showRigSetup() {
-    RigSetupDialog dlg(this);
-    if (dlg.exec() == QDialog::Accepted) {
-        dlg.saveToSettings();
-        m_rigStatusLabel->setText("Rig: Connecting...");
-
-        if (!m_hamlib->open(dlg.rigModelId(), dlg.port(), dlg.baudRate())) {
-            m_rigStatusLabel->setText("Rig: " + m_hamlib->errorString());
-        }
-    }
-}
-
-void VCPMainWindow::disconnectRig() {
-    m_hamlib->close();
-}
-
-void VCPMainWindow::pttTest() {
-    if (!m_hamlib->isOpen()) return;
-    m_rigStatusLabel->setText("Rig: PTT ON...");
-    m_hamlib->setPTT(true);
-    QTimer::singleShot(1000, this, [this]() {
-        m_hamlib->setPTT(false);
-        m_rigStatusLabel->setText("Rig: Connected");
-    });
-}
 
 // --- View styles ---
 
@@ -346,7 +299,7 @@ void VCPMainWindow::setViewStyle(ViewStyle style) {
 void VCPMainWindow::applyViewStyle() {
     m_impedanceSection->setVisible(m_viewStyle >= Standard);
     m_rawLabel->setVisible(m_viewStyle == Full);
-    m_vcpWidget->adjustSize();
+    centralWidget()->adjustSize();
     adjustSize();
 }
 
@@ -403,6 +356,10 @@ void VCPMainWindow::connectToDevice() {
     connect(m_protocol, &LP100AProtocol::dataUpdated, this, &VCPMainWindow::onDataUpdated);
     connect(m_protocol, &LP100AProtocol::rawResponse, this, &VCPMainWindow::onRawResponse);
     connect(m_protocol, &LP100AProtocol::parseError, this, &VCPMainWindow::onParseError);
+
+    // Update plot widget with the protocol reference
+    if (auto *pw = qobject_cast<PlotWidget *>(m_plotWindow))
+        pw->setLP100A(m_protocol);
 
     if (!m_transport->open()) {
         m_statusLabel->setText("Failed to connect");
