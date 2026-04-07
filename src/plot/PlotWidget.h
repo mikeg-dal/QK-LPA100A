@@ -43,9 +43,6 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 signals:
-    void runRequested();
-    void stopRequested();
-    void resetRequested();
     void rigConnectRequested(int modelId, const QString &port, int baudRate);
     void rigDisconnectRequested();
 
@@ -133,5 +130,4 @@ private:
     SweepEngine *m_sweepEngine = nullptr;
     HamlibRig *m_rig = nullptr;
     LP100AProtocol *m_lp100a = nullptr;
-    QList<QPair<int, QString>> m_rigList; // modelId, display name
 };

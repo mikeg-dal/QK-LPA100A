@@ -32,13 +32,13 @@ set(CORE_HEADERS
     src/core/TcpTransport.h
     src/core/HamlibRig.h
 )
+# Note: HamlibClient.h/.cpp removed — project uses direct Hamlib API exclusively
 
 set(VCP_SOURCES
     src/vcp/VCPMainWindow.cpp
     src/vcp/PowerGauge.cpp
     src/vcp/SWRGauge.cpp
     src/vcp/ConnectionDialog.cpp
-    src/vcp/RigSetupDialog.cpp
 )
 
 set(VCP_HEADERS
@@ -46,7 +46,6 @@ set(VCP_HEADERS
     src/vcp/PowerGauge.h
     src/vcp/SWRGauge.h
     src/vcp/ConnectionDialog.h
-    src/vcp/RigSetupDialog.h
 )
 
 set(PLOT_SOURCES

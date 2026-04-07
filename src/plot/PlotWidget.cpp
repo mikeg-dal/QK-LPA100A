@@ -197,10 +197,9 @@ PlotWidget::PlotWidget(QWidget *parent)
     auto updateAxisRange = [this]() {
         double fMin = m_startFreq->value();
         double fMax = m_stopFreq->value();
-        double pad = 0.0;
-        m_axisX->setRange(fMin - pad, fMax + pad);
-        m_axisXTop->setRange(fMin - pad, fMax + pad);
-        m_axisXBot->setRange(fMin - pad, fMax + pad);
+        m_axisX->setRange(fMin, fMax);
+        m_axisXTop->setRange(fMin, fMax);
+        m_axisXBot->setRange(fMin, fMax);
     };
     connect(m_startFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, updateAxisRange);
     connect(m_stopFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, updateAxisRange);
@@ -519,7 +518,6 @@ void PlotWidget::createControls() {
     for (const auto &rig : rigs) {
         QString display = QString("%1 %2").arg(rig.manufacturer, rig.model).trimmed();
         m_rigCombo->addItem(display, rig.modelId);
-        m_rigList.append({rig.modelId, display});
     }
     // Default to K4 if available
     for (int i = 0; i < m_rigCombo->count(); ++i) {
@@ -724,9 +722,8 @@ void PlotWidget::updateChart() {
 
         double fMin = m_startFreq->value();
         double fMax = m_stopFreq->value();
-        double pad = 0.0;
-        m_axisXTop->setRange(fMin - pad, fMax + pad);
-        m_axisXBot->setRange(fMin - pad, fMax + pad);
+        m_axisXTop->setRange(fMin, fMax);
+        m_axisXBot->setRange(fMin, fMax);
 
         if (m_displayMode == ZPhase) {
             m_axisYTop->setTitleText("Z (Ohms)");
@@ -788,10 +785,8 @@ void PlotWidget::updateChart() {
         fMax = m_data.at(m_data.count() - 1).freqMHz;
     }
 
-    m_axisX->setLabelFormat("%.3f");  // Always kHz resolution for ham radio
-    double stepMHz = stepKHz() / 1000.0;
-    double pad = 0.0;
-    m_axisX->setRange(fMin - pad, fMax + pad);
+    m_axisX->setLabelFormat("%.3f");
+    m_axisX->setRange(fMin, fMax);
 
     if (m_data.isEmpty()) return;
 
