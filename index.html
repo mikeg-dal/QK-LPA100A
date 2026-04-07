@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QK-LP100A — LP-100A Digital Wattmeter Control</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>QK-LP100A</h1>
+      <p class="tagline">Real-time power, SWR, and impedance monitoring for the TelePost LP-100A</p>
+    </header>
+
+    <div class="beta-notice">
+      <strong>Active Development</strong> &mdash; QK-LP100A is currently in early release.
+      Expect updates as features are refined.
+    </div>
+
+    <div class="hero">
+      <img src="images/lp-100a.png" alt="TelePost LP-100A Digital Vector RF Wattmeter">
+    </div>
+
+    <p class="hero-description">
+      A native macOS control and monitoring application for the TelePost LP-100A Digital
+      Vector RF Wattmeter. Real-time power and SWR gauges, impedance display, automated
+      antenna frequency sweeps with Smith chart visualization, and Hamlib rig integration
+      &mdash; all in a single, purpose-built app for Apple Silicon.
+    </p>
+
+    <div id="loading" class="loading">Loading release info&hellip;</div>
+    <div id="error" class="error" hidden>
+      No releases available yet. Check back soon.
+    </div>
+
+    <div id="release-info" hidden>
+      <p class="version-line">
+        <span id="version-badge" class="badge"></span>
+        <span id="release-date" class="date"></span>
+        <a id="release-notes-link" class="release-notes-link" href="#" target="_blank" rel="noopener">Release Notes</a>
+      </p>
+
+      <div class="cards">
+        <a id="card-macos" class="card" href="#">
+          <div class="card-icon">&#63743;</div>
+          <h2>macOS</h2>
+          <p class="filename" id="fn-macos"></p>
+          <p class="filesize" id="sz-macos"></p>
+          <span class="btn">Download</span>
+          <p class="hash" id="hash-macos"></p>
+        </a>
+      </div>
+    </div>
+
+    <div class="info-panels">
+      <div class="panel">
+        <h3>About</h3>
+        <p>
+          QK-LP100A brings the TelePost LP-100A Digital Vector RF Wattmeter to your Mac
+          with two operating modes. <strong>VCP mode</strong> provides real-time power and
+          SWR gauges with impedance readout via serial or TCP. <strong>Plot mode</strong>
+          automates frequency sweeps using Hamlib rig control, charting power, SWR, and
+          impedance on a Smith chart across your antenna's bandwidth.
+        </p>
+        <h4>Links</h4>
+        <ul class="link-list">
+          <li><a href="https://www.youtube.com/@AI5QK" target="_blank" rel="noopener">YouTube @AI5QK</a></li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Requirements</h3>
+        <table class="req-table">
+          <tbody>
+            <tr>
+              <td class="req-platform">macOS</td>
+              <td>
+                macOS 26 (Tahoe) or later<br>
+                <span class="req-detail">Apple Silicon (M1 or newer)</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Getting Started</h3>
+        <table class="req-table">
+          <tbody>
+            <tr>
+              <td class="req-platform">macOS</td>
+              <td>
+                Open the DMG and drag to Applications.<br>
+                <span class="req-detail">Signed and notarized &mdash; no Gatekeeper warnings.</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="dev-section">
+      <h3>Development &amp; Feedback</h3>
+      <p>
+        QK-LP100A is under active development. If you run into a problem or have
+        a suggestion, we'd love to hear from you.
+      </p>
+      <a class="issues-link" href="https://github.com/mikeg-dal/QK-LPA100A/issues" target="_blank" rel="noopener">
+        <span class="issues-icon">&#9679;</span>
+        View Current Open Issues on GitHub
+      </a>
+    </div>
+
+    <footer>
+      <p>&copy; 2025-2026 Mike Garcia &mdash; AI5QK</p>
+    </footer>
+  </main>
+
+  <script>
+    (async () => {
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const info = document.getElementById('release-info');
+
+      try {
+        const resp = await fetch('releases.json');
+        if (!resp.ok) throw new Error(resp.statusText);
+        const rel = await resp.json();
+
+        if (!rel.tag) throw new Error('No release yet');
+
+        // Version badge
+        const badge = document.getElementById('version-badge');
+        badge.textContent = rel.tag;
+        if (rel.prerelease) badge.classList.add('pre');
+
+        // Date and release notes link
+        document.getElementById('release-date').textContent = rel.date;
+        document.getElementById('release-notes-link').href =
+          'https://github.com/mikeg-dal/QK-LPA100A/releases/tag/' + rel.tag;
+
+        // Platform cards
+        for (const [platform, asset] of Object.entries(rel.assets)) {
+          const card = document.getElementById('card-' + platform);
+          if (!card) continue;
+          card.href = asset.url;
+          document.getElementById('fn-' + platform).textContent = asset.name;
+          document.getElementById('sz-' + platform).textContent = asset.size;
+          const hashEl = document.getElementById('hash-' + platform);
+          if (asset.sha256) {
+            hashEl.textContent = 'SHA256: ' + asset.sha256;
+            hashEl.title = asset.sha256;
+          }
+        }
+
+        loading.hidden = true;
+        info.hidden = false;
+      } catch {
+        loading.hidden = true;
+        error.hidden = false;
+      }
+    })();
+  </script>
+</body>
+</html>

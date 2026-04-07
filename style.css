@@ -1,0 +1,395 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  background: #0f1117;
+  color: #e0e0e0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 3rem 1rem;
+}
+
+main {
+  max-width: 1100px;
+  width: 100%;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.tagline {
+  margin-top: 0.4rem;
+  color: #888;
+  font-size: 1rem;
+}
+
+/* Beta notice */
+.beta-notice {
+  text-align: center;
+  color: #cca350;
+  background: #1a1810;
+  border: 1px solid #3d3520;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.beta-notice strong {
+  color: #e0b860;
+}
+
+.beta-notice a {
+  color: #5a9eff;
+  text-decoration: none;
+}
+
+.beta-notice a:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
+/* Hero screenshot */
+.hero {
+  margin-bottom: 1.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #2a2d37;
+}
+
+.hero img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Hero description */
+.hero-description {
+  text-align: center;
+  color: #aaa;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 680px;
+  margin: 0 auto 2rem;
+}
+
+/* Version / date */
+.version-line {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge {
+  display: inline-block;
+  background: #1a6eff;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+}
+
+.badge.pre {
+  background: #b35e00;
+}
+
+.date {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.release-notes-link {
+  color: #5a9eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.release-notes-link:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: #e0e0e0;
+  background: #1a1d27;
+  border: 1px solid #2a2d37;
+  border-radius: 8px;
+  padding: 1.5rem 1rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.card:hover {
+  border-color: #1a6eff;
+  background: #1e2230;
+}
+
+.card-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.7;
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.4rem;
+}
+
+.filename {
+  font-size: 0.75rem;
+  color: #666;
+  word-break: break-all;
+  text-align: center;
+}
+
+.filesize {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0.3rem 0 0.8rem;
+}
+
+.btn {
+  display: inline-block;
+  background: #1a6eff;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 1.2rem;
+  border-radius: 5px;
+  transition: background 0.15s;
+}
+
+.card:hover .btn {
+  background: #3d85ff;
+}
+
+.hash {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.65rem;
+  color: #555;
+  margin-top: 0.6rem;
+  cursor: default;
+  word-break: break-all;
+}
+
+/* Info panels */
+.info-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.panel {
+  background: #1a1d27;
+  border: 1px solid #2a2d37;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+}
+
+.panel h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.panel h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ccc;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.panel p {
+  font-size: 0.85rem;
+  color: #aaa;
+  line-height: 1.55;
+}
+
+/* Links list */
+.link-list {
+  list-style: none;
+  padding: 0;
+}
+
+.link-list li {
+  margin-bottom: 0.3rem;
+}
+
+.link-list a {
+  color: #5a9eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.link-list a:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
+/* Requirements table */
+.req-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.req-table td {
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+  color: #ccc;
+  vertical-align: top;
+  border-bottom: 1px solid #22252f;
+}
+
+.req-table tr:last-child td {
+  border-bottom: none;
+}
+
+.req-platform {
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  padding-right: 1rem;
+  min-width: 5.5rem;
+  width: 1%;
+}
+
+.req-detail {
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.req-detail a {
+  color: #5a9eff;
+  text-decoration: none;
+}
+
+.req-detail a:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
+.req-table code {
+  background: #22252f;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  color: #ddd;
+}
+
+/* Loading / error */
+.loading,
+.error {
+  text-align: center;
+  color: #888;
+  padding: 3rem 0;
+}
+
+.error {
+  color: #cc6666;
+}
+
+/* Development & Feedback section */
+.dev-section {
+  background: #1a1d27;
+  border: 1px solid #2a2d37;
+  border-radius: 8px;
+  padding: 1.5rem 2rem;
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.dev-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.6rem;
+}
+
+.dev-section p {
+  font-size: 0.85rem;
+  color: #aaa;
+  line-height: 1.55;
+  max-width: 600px;
+  margin: 0 auto 1rem;
+}
+
+.issues-link {
+  display: inline-block;
+  color: #fff;
+  background: #1a6eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 1.3rem;
+  border-radius: 5px;
+  transition: background 0.15s;
+}
+
+.issues-link:hover {
+  background: #3d85ff;
+}
+
+.issues-icon {
+  color: #4caf50;
+  margin-right: 0.4rem;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+/* Footer */
+footer {
+  margin-top: 2.5rem;
+  text-align: center;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .info-panels {
+    grid-template-columns: 1fr;
+  }
+}
