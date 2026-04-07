@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QCloseEvent>
 #include <QFileDialog>
+#include <QGroupBox>
 #include <cmath>
 
 PlotWidget::PlotWidget(QWidget *parent)
@@ -30,63 +31,126 @@ PlotWidget::PlotWidget(QWidget *parent)
     m_chartStack->addWidget(m_chartView);       // Page 0: Single chart
     m_chartStack->addWidget(m_dualChartWidget);  // Page 1: Dual stacked charts
     m_chartStack->addWidget(m_smithChart);       // Page 2: Smith Chart
-    mainLayout->addWidget(m_chartStack, 1);
 
     createControls();
 
-    // === Row 1: Sweep parameters + buttons block ===
-    auto *row1 = new QHBoxLayout;
-    row1->setSpacing(4);
-    row1->addWidget(new QLabel("Start Freq"));
-    row1->addWidget(m_startFreq);
-    row1->addWidget(new QLabel("Stop Freq"));
-    row1->addWidget(m_stopFreq);
-    row1->addWidget(new QLabel("Step"));
-    row1->addWidget(m_stepCombo);
-    row1->addWidget(m_displayCombo);
-    row1->addStretch();
+    // QGroupBox stylesheet for dark theme
+    const QString groupStyle = QString(
+        "QGroupBox { border: 1px solid %1; border-radius: 4px;"
+        " margin-top: 10px; padding: 6px 6px 4px 6px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 8px;"
+        " padding: 0 4px; color: %2; font-weight: bold; font-size: %3px; }")
+        .arg(Style::Color::PanelBorder, Style::Color::AccentAmber)
+        .arg(Style::Font::Medium);
 
-    // Buttons: Run/Reset/Stop stacked vertically
-    auto *btnCol = new QVBoxLayout;
-    btnCol->setSpacing(2);
-    btnCol->addWidget(m_runBtn);
-    btnCol->addWidget(m_resetBtn);
-    btnCol->addWidget(m_stopBtn);
-    row1->addLayout(btnCol);
+    // Display mode combo as chart title (centered above chart)
+    auto *titleRow = new QHBoxLayout;
+    titleRow->addStretch();
+    titleRow->addWidget(m_displayCombo);
+    titleRow->addStretch();
+    mainLayout->addLayout(titleRow);
 
-    // Checkboxes: Sign/Spline/BestFit stacked vertically
-    auto *chkCol = new QVBoxLayout;
-    chkCol->setSpacing(1);
-    chkCol->addWidget(m_signCheck);
-    chkCol->addWidget(m_splineCheck);
-    chkCol->addWidget(m_bestFitCheck);
-    row1->addLayout(chkCol);
+    mainLayout->addWidget(m_chartStack, 1);
 
-    // Export buttons
-    auto *expCol = new QVBoxLayout;
-    expCol->setSpacing(2);
-    expCol->addWidget(m_exportCsvBtn);
-    expCol->addWidget(m_exportImgBtn);
-    expCol->addStretch();
-    row1->addLayout(expCol);
+    // === Sweep Section ===
+    auto *sweepGroup = new QGroupBox("Sweep");
+    sweepGroup->setStyleSheet(groupStyle);
+    auto *sweepLayout = new QVBoxLayout(sweepGroup);
+    sweepLayout->setSpacing(2);
+    sweepLayout->setContentsMargins(6, 8, 6, 4);
 
-    mainLayout->addLayout(row1);
+    auto *sweepRow1 = new QHBoxLayout;
+    sweepRow1->setSpacing(4);
+    sweepRow1->addWidget(new QLabel("Start"));
+    sweepRow1->addWidget(m_startFreq);
+    sweepRow1->addSpacing(12);
+    sweepRow1->addWidget(new QLabel("Step"));
+    sweepRow1->addSpacing(4);
+    sweepRow1->addWidget(m_stepCombo);
+    sweepRow1->addStretch();
+    sweepLayout->addLayout(sweepRow1);
 
-    // === Row 2: Live readout ===
-    auto *row2 = new QHBoxLayout;
-    row2->setSpacing(6);
+    auto *sweepRow2 = new QHBoxLayout;
+    sweepRow2->setSpacing(4);
+    sweepRow2->addWidget(new QLabel("Stop"));
+    sweepRow2->addWidget(m_stopFreq);
+    sweepRow2->addSpacing(12);
+    sweepRow2->addWidget(new QLabel("Sample"));
+    sweepRow2->addSpacing(4);
+    sweepRow2->addWidget(m_sampleCombo);
+    sweepRow2->addSpacing(8);
+    sweepRow2->addWidget(new QLabel("Settle"));
+    sweepRow2->addSpacing(4);
+    sweepRow2->addWidget(m_settleCombo);
+    sweepRow2->addStretch();
+    sweepLayout->addLayout(sweepRow2);
+
+    mainLayout->addWidget(sweepGroup);
+
+    // === Rig Section ===
+    auto *rigGroup = new QGroupBox("Rig");
+    rigGroup->setStyleSheet(groupStyle);
+    auto *rigLayout = new QVBoxLayout(rigGroup);
+    rigLayout->setSpacing(2);
+    rigLayout->setContentsMargins(6, 8, 6, 4);
+
+    auto *rigRow1 = new QHBoxLayout;
+    rigRow1->setSpacing(4);
+    rigRow1->addWidget(m_rigCombo);
+    rigRow1->addWidget(m_rigPortCombo, 1);
+    rigRow1->addWidget(m_rigBaudCombo);
+    rigRow1->addWidget(m_rigConnectBtn);
+    rigLayout->addLayout(rigRow1);
+
+    auto *rigRow2 = new QHBoxLayout;
+    rigRow2->setSpacing(4);
+    rigRow2->addWidget(new QLabel("TX Mode"));
+    rigRow2->addSpacing(4);
+    rigRow2->addWidget(m_txModeCombo);
+    rigRow2->addSpacing(12);
+    rigRow2->addWidget(m_powerSpin);
+    rigRow2->addStretch();
+    rigLayout->addLayout(rigRow2);
+
+    mainLayout->addWidget(rigGroup);
+
+    // === Actions Row ===
+    auto *actionsRow = new QHBoxLayout;
+    actionsRow->setSpacing(4);
+    actionsRow->addWidget(m_runBtn);
+    actionsRow->addWidget(m_resetBtn);
+    actionsRow->addWidget(m_stopBtn);
+    actionsRow->addSpacing(12);
+    actionsRow->addWidget(m_signCheck);
+    actionsRow->addWidget(m_splineCheck);
+    actionsRow->addWidget(m_bestFitCheck);
+    actionsRow->addStretch();
+
+    auto *exportGroup = new QGroupBox("Export");
+    exportGroup->setStyleSheet(groupStyle);
+    auto *exportLayout = new QHBoxLayout(exportGroup);
+    exportLayout->setSpacing(4);
+    exportLayout->setContentsMargins(6, 8, 6, 4);
+    exportLayout->addWidget(m_exportCsvBtn);
+    exportLayout->addWidget(m_exportImgBtn);
+    actionsRow->addWidget(exportGroup);
+    mainLayout->addLayout(actionsRow);
+
+    // === Live Readout ===
+    auto *readoutRow = new QHBoxLayout;
+    readoutRow->setSpacing(6);
     auto addReadout = [&](const QString &name, QLabel *&label) {
         auto *n = new QLabel(name);
         QFont nf(Style::Font::Family); nf.setPixelSize(Style::Font::Small);
         n->setFont(nf);
         n->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
-        row2->addWidget(n);
+        readoutRow->addWidget(n);
         label = new QLabel("--");
         QFont vf(Style::Font::Monospace); vf.setPixelSize(Style::Font::Medium); vf.setBold(true);
         label->setFont(vf);
         label->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
         label->setMinimumWidth(36);
-        row2->addWidget(label);
+        readoutRow->addWidget(label);
     };
     addReadout("Freq", m_freqLabel);
     addReadout("Pwr", m_pwrLabel);
@@ -95,34 +159,12 @@ PlotWidget::PlotWidget(QWidget *parent)
     addReadout("R", m_rLabel);
     addReadout("X", m_xLabel);
     addReadout("SWR", m_swrLabel);
-    row2->addStretch();
-    mainLayout->addLayout(row2);
+    readoutRow->addStretch();
+    mainLayout->addLayout(readoutRow);
 
-    // === Row 3a: Sweep settings ===
-    auto *row3a = new QHBoxLayout;
-    row3a->setSpacing(4);
-    row3a->addWidget(new QLabel("Sample"));
-    row3a->addWidget(m_sampleCombo);
-    row3a->addWidget(new QLabel("Settle"));
-    row3a->addWidget(m_settleCombo);
-    row3a->addWidget(new QLabel("TX Mode"));
-    row3a->addWidget(m_txModeCombo);
-    row3a->addWidget(m_powerSpin);
-    row3a->addStretch();
-    mainLayout->addLayout(row3a);
-
-    // === Row 3b: Rig connection ===
-    auto *row3b = new QHBoxLayout;
-    row3b->setSpacing(4);
-    row3b->addWidget(m_rigCombo);
-    row3b->addWidget(m_rigPortCombo, 1);
-    row3b->addWidget(m_rigBaudCombo);
-    row3b->addWidget(m_rigConnectBtn);
-    mainLayout->addLayout(row3b);
-
-    // === Row 4: Status + raw string ===
-    auto *row4 = new QHBoxLayout;
-    row4->setSpacing(4);
+    // === Status Bar ===
+    auto *statusRow = new QHBoxLayout;
+    statusRow->setSpacing(4);
     m_rawLabel = new QLabel;
     QFont rawFont(Style::Font::Monospace); rawFont.setPixelSize(Style::Font::Tiny);
     m_rawLabel->setFont(rawFont);
@@ -134,9 +176,9 @@ PlotWidget::PlotWidget(QWidget *parent)
     m_statusLabel->setFont(rawFont);
     m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
 
-    row4->addWidget(m_rawLabel, 1);
-    row4->addWidget(m_statusLabel);
-    mainLayout->addLayout(row4);
+    statusRow->addWidget(m_rawLabel, 1);
+    statusRow->addWidget(m_statusLabel);
+    mainLayout->addLayout(statusRow);
 
     // === Connections ===
     connect(m_displayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -343,12 +385,14 @@ void PlotWidget::createControls() {
     m_startFreq->setDecimals(3);
     m_startFreq->setSuffix(" MHz");
     m_startFreq->setValue(28.0);
+    m_startFreq->setFixedWidth(130);
 
     m_stopFreq = new QDoubleSpinBox;
     m_stopFreq->setRange(0.1, 60.0);
     m_stopFreq->setDecimals(3);
     m_stopFreq->setSuffix(" MHz");
     m_stopFreq->setValue(29.7);
+    m_stopFreq->setFixedWidth(130);
 
     m_stepCombo = new QComboBox;
     m_stepCombo->addItem("1 kHz", 1);
@@ -363,13 +407,27 @@ void PlotWidget::createControls() {
     m_stepCombo->setCurrentIndex(5); // 50 kHz default
 
     m_displayCombo = new QComboBox;
-    m_displayCombo->addItem("R+jX", RplusJX);
-    m_displayCombo->addItem("Z & Phase", ZPhase);
-    m_displayCombo->addItem("SWR", SwrMode);
+    m_displayCombo->addItem("R + jX", RplusJX);
+    m_displayCombo->addItem("Z Magnitude & Phase", ZPhase);
+    m_displayCombo->addItem("Standing Wave Ratio", SwrMode);
     m_displayCombo->addItem("Return Loss", ReturnLoss);
-    m_displayCombo->addItem("Refl Coeff", ReflCoeff);
-    m_displayCombo->addItem("Smith", SmithChart);
+    m_displayCombo->addItem("Reflection Coefficient", ReflCoeff);
+    m_displayCombo->addItem("Smith Chart", SmithChart);
     m_displayCombo->setCurrentIndex(2);
+    QFont comboFont(Style::Font::Family);
+    comboFont.setPixelSize(14);
+    comboFont.setBold(true);
+    m_displayCombo->setFont(comboFont);
+
+    m_displayCombo->setMinimumWidth(220);
+    m_displayCombo->setStyleSheet(QString(
+        "QComboBox { background: %1; color: %2; border: 1px solid %3;"
+        " border-radius: 4px; padding: 2px 8px; }"
+        "QComboBox::drop-down { border: none; }"
+        "QComboBox QAbstractItemView { background: %1; color: %2;"
+        " selection-background-color: %4; min-width: 220px; }")
+        .arg(Style::Color::DarkBackground, Style::Color::TextWhite,
+             Style::Color::PanelBorder, Style::Color::AccentAmber));
 
     m_runBtn = new QPushButton("Run");
     m_resetBtn = new QPushButton("Reset");
@@ -463,12 +521,7 @@ void PlotWidget::createChart() {
     m_chart->legend()->hide();
     m_chart->setMargins(QMargins(4, 4, 4, 4));
 
-    QFont titleFont(Style::Font::Family);
-    titleFont.setPixelSize(14);
-    titleFont.setBold(true);
-    m_chart->setTitleFont(titleFont);
-    m_chart->setTitleBrush(QColor(Style::Color::TextWhite));
-    m_chart->setTitle("Standing Wave Ratio");
+    m_chart->setTitle(""); // Title replaced by display mode combo above chart
 
     m_axisX = new QValueAxis;
     m_axisX->setTitleText("Frequency - MHz");
@@ -654,25 +707,20 @@ void PlotWidget::updateChart() {
 
     switch (m_displayMode) {
         case SwrMode:
-            m_chart->setTitle("Standing Wave Ratio");
             m_axisY1->setTitleText("SWR"); m_axisY1->setRange(1.0, 3.0); break;
         case RplusJX:
-            m_chart->setTitle("R + jX");
             m_axisY1->setTitleText("Ohms"); m_axisY2->setTitleText("Ohms");
             m_axisY2->setVisible(true);
             m_axisY1->setRange(0, 100); m_axisY2->setRange(-50, 50);
             m_chart->legend()->show(); break;
         case ZPhase:
-            m_chart->setTitle("Z Magnitude & Phase");
             m_axisY1->setTitleText("Ohms"); m_axisY2->setTitleText("Degrees");
             m_axisY2->setVisible(true);
             m_axisY1->setRange(0, 100); m_axisY2->setRange(-90, 90);
             m_chart->legend()->show(); break;
         case ReturnLoss:
-            m_chart->setTitle("Return Loss");
             m_axisY1->setTitleText("dB"); m_axisY1->setRange(0, 30); break;
         case ReflCoeff:
-            m_chart->setTitle("Reflection Coefficient");
             m_axisY1->setTitleText("|Γ|"); m_axisY1->setRange(0, 1.0); break;
         case SmithChart:
             break; // Handled above

@@ -228,4 +228,36 @@ void SmithChartWidget::drawData(QPainter &p) const {
         p.drawPolyline(points.data(), points.size());
     }
 
+    // Frequency labels at start and end of the curve
+    if (m_data->count() >= 2) {
+        QFont freqFont(Style::Font::Family);
+        freqFont.setPixelSize(Style::Font::Small);
+        freqFont.setBold(true);
+        p.setFont(freqFont);
+        p.setPen(QColor(Style::Color::StatusGreen));
+
+        auto drawFreqLabel = [&](const QPointF &pt, double freqMHz) {
+            QString label = QString::number(freqMHz, 'f', freqMHz == int(freqMHz) ? 1 : 2);
+            QFontMetrics fm(freqFont);
+            QRect textRect = fm.boundingRect(label);
+
+            // Offset label away from chart center
+            double dx = pt.x() - m_center.x();
+            double dy = pt.y() - m_center.y();
+            double dist = std::sqrt(dx * dx + dy * dy);
+            double ox = 0, oy = 0;
+            if (dist > 1.0) {
+                ox = (dx / dist) * 8.0;
+                oy = (dy / dist) * 8.0;
+            }
+
+            double lx = pt.x() + ox - textRect.width() / 2.0;
+            double ly = pt.y() + oy + textRect.height() / 2.0;
+            p.drawText(QPointF(lx, ly), label);
+        };
+
+        drawFreqLabel(points.first(), m_data->at(0).freqMHz);
+        drawFreqLabel(points.last(), m_data->at(m_data->count() - 1).freqMHz);
+    }
+
 }

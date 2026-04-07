@@ -23,6 +23,7 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("QK-LP100A");
+    resize(350, 170); // Default compact size; applyViewStyle() will adjust
 
     m_hamlib = new HamlibRig(this);
     connect(m_hamlib, &HamlibRig::errorOccurred, this, [this](const QString &err) {
@@ -270,7 +271,7 @@ void VCPMainWindow::openPlotWindow() {
     plotWidget->setLP100A(m_protocol);
     plotWidget->setWindowTitle("QK-LP100A — Plot");
     plotWidget->setAttribute(Qt::WA_DeleteOnClose);
-    plotWidget->resize(900, 650);
+    plotWidget->resize(500, 550);
     plotWidget->setStyleSheet(
         QString("background: %1;").arg(Style::Color::Background));
 
@@ -316,8 +317,22 @@ void VCPMainWindow::applyViewStyle() {
     m_buttonSection->setVisible(m_viewStyle >= Standard);
     m_impedanceSection->setVisible(m_viewStyle == Full);
     m_rawLabel->setVisible(m_viewStyle == Full);
+
+    // Remove size constraints so we can shrink freely
+    setMinimumSize(0, 0);
+    setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     centralWidget()->adjustSize();
-    adjustSize();
+
+    switch (m_viewStyle) {
+        case Compact:  setFixedSize(350, 170); break;
+        case Standard: setFixedSize(400, 200); break;
+        case Full:
+            // Allow resizing in Full mode
+            setMinimumSize(0, 0);
+            setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+            resize(sizeHint());
+            break;
+    }
 }
 
 // --- LP-100A connection ---

@@ -38,9 +38,9 @@ Two-mode application for the TelePost LP-100A Digital Vector RF Wattmeter:
 
 ### Module Layout
 
-- `src/core/` — Transport abstraction (`ITransport` → `SerialTransport`, `TcpTransport`), LP-100A protocol parser (`LP100AProtocol`), Hamlib rig wrapper (`HamlibRig`)
-- `src/vcp/` — Main VCP window, custom gauge widgets (`PowerGauge`, `SWRGauge`), connection dialog
-- `src/plot/` — Plot window (`PlotWidget`), sweep state machine (`SweepEngine`), data container (`SweepData`)
+- `src/core/` — Transport abstraction (`ITransport` → `SerialTransport`, `TcpTransport`), LP-100A protocol parser (`LP100AProtocol`), Hamlib rig wrappers (`HamlibRig` for direct C API, `HamlibClient` for rigctld TCP)
+- `src/vcp/` — Main VCP window, custom gauge widgets (`PowerGauge`, `SWRGauge`), connection dialog, rig setup dialog. Three view styles: Compact, Standard, Full (hides/shows impedance and button sections)
+- `src/plot/` — Plot window (`PlotWidget`), sweep state machine (`SweepEngine`), data container (`SweepData`), custom Smith chart (`SmithChartWidget`)
 - `src/Style.h` — **All** UI constants (colors, fonts, layout dimensions, protocol defaults). No magic numbers elsewhere.
 
 ### LP-100A Serial Protocol
@@ -57,7 +57,7 @@ After sending A or F, wait 50ms (`Style::Protocol::CommandDelayMs`) before polli
 - **Style.h** is the single source of truth for every visual value. Button stylesheets are built via `Style::detail::gradient()` helper. Meter colors via `Style::meterGradient()`. All layout dimensions are named constants.
 - **SweepEngine** uses `QTimer::singleShot()` chaining (not blocking loops) to keep UI responsive during multi-minute sweeps. State machine: SetFreq → Settle → PTTOn → Sample → ReadData → PTTOff → next.
 - **Integer Hz math** in SweepEngine avoids floating-point frequency drift. Convert to MHz only at display time.
-- **HamlibRig** wraps the Hamlib C API directly (no external rigctld). Suppresses Hamlib debug output via `rig_set_debug_file(/dev/null)`. Pre-warms macOS network stack at app startup for TCP rig connections.
+- **HamlibRig** wraps the Hamlib C API directly (no external rigctld). **HamlibClient** is an alternative async TCP client for external rigctld. The app currently uses `HamlibRig` for sweep operations. Suppresses Hamlib debug output via `rig_set_debug_file(/dev/null)`. Pre-warms macOS network stack at app startup for TCP rig connections.
 
 ### Stylesheet Approach
 
