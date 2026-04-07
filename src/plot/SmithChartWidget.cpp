@@ -228,12 +228,4 @@ void SmithChartWidget::drawData(QPainter &p) const {
         p.drawPolyline(points.data(), points.size());
     }
 
-    // Start frequency marker (green dot)
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(Style::Color::StatusGreen));
-    p.drawEllipse(points.first(), 4, 4);
-
-    // End frequency marker
-    p.setBrush(QColor(Style::Color::AccentAmber));
-    p.drawEllipse(points.last(), 4, 4);
 }

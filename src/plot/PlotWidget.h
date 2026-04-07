@@ -59,20 +59,37 @@ private:
     void createChart();
     void addSeries(const QVector<double> &x, const QVector<double> &y,
                    const QColor &color, QValueAxis *yAxis);
+    void addDualSeries(QChart *chart, QValueAxis *axisX, QValueAxis *axisY,
+                       const QVector<double> &x, const QVector<double> &y,
+                       const QColor &color, const QString &name = {});
     void plotSWR();
     void plotRplusJX();
     void plotZPhase();
     void plotReturnLoss();
     void plotReflCoeff();
 
-    // Chart (QStackedWidget swaps between QtCharts and Smith Chart)
+    // Chart (QStackedWidget swaps between single/dual/Smith)
     QStackedWidget *m_chartStack;
     SmithChartWidget *m_smithChart;
+
+    // Single chart (SWR, RL, ReflCoeff)
     QChartView *m_chartView;
     QChart *m_chart;
     QValueAxis *m_axisX;
     QValueAxis *m_axisY1;
     QValueAxis *m_axisY2;
+
+    // Dual chart container (Z/Phase, R+jX) — two charts stacked vertically
+    QWidget *m_dualChartWidget;
+    QLabel *m_dualTitle;
+    QChartView *m_chartViewTop;
+    QChartView *m_chartViewBot;
+    QChart *m_chartTop;
+    QChart *m_chartBot;
+    QValueAxis *m_axisXTop;
+    QValueAxis *m_axisXBot;
+    QValueAxis *m_axisYTop;
+    QValueAxis *m_axisYBot;
 
     // Row 1: sweep parameters
     QDoubleSpinBox *m_startFreq;

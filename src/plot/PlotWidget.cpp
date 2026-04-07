@@ -6,6 +6,7 @@
 #include "core/SerialTransport.h"
 #include "Style.h"
 #include <QStackedWidget>
+#include <QtCharts/QLegendMarker>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -26,13 +27,14 @@ PlotWidget::PlotWidget(QWidget *parent)
     createChart();
     m_smithChart = new SmithChartWidget;
     m_chartStack = new QStackedWidget;
-    m_chartStack->addWidget(m_chartView);  // Page 0: QtCharts
-    m_chartStack->addWidget(m_smithChart); // Page 1: Smith Chart
+    m_chartStack->addWidget(m_chartView);       // Page 0: Single chart
+    m_chartStack->addWidget(m_dualChartWidget);  // Page 1: Dual stacked charts
+    m_chartStack->addWidget(m_smithChart);       // Page 2: Smith Chart
     mainLayout->addWidget(m_chartStack, 1);
 
     createControls();
 
-    // === Row 1: Sweep parameters ===
+    // === Row 1: Sweep parameters + buttons block ===
     auto *row1 = new QHBoxLayout;
     row1->setSpacing(4);
     row1->addWidget(new QLabel("Start Freq"));
@@ -43,14 +45,31 @@ PlotWidget::PlotWidget(QWidget *parent)
     row1->addWidget(m_stepCombo);
     row1->addWidget(m_displayCombo);
     row1->addStretch();
-    row1->addWidget(m_runBtn);
-    row1->addWidget(m_resetBtn);
-    row1->addWidget(m_stopBtn);
-    row1->addWidget(m_signCheck);
-    row1->addWidget(m_splineCheck);
-    row1->addWidget(m_bestFitCheck);
-    row1->addWidget(m_exportCsvBtn);
-    row1->addWidget(m_exportImgBtn);
+
+    // Buttons: Run/Reset/Stop stacked vertically
+    auto *btnCol = new QVBoxLayout;
+    btnCol->setSpacing(2);
+    btnCol->addWidget(m_runBtn);
+    btnCol->addWidget(m_resetBtn);
+    btnCol->addWidget(m_stopBtn);
+    row1->addLayout(btnCol);
+
+    // Checkboxes: Sign/Spline/BestFit stacked vertically
+    auto *chkCol = new QVBoxLayout;
+    chkCol->setSpacing(1);
+    chkCol->addWidget(m_signCheck);
+    chkCol->addWidget(m_splineCheck);
+    chkCol->addWidget(m_bestFitCheck);
+    row1->addLayout(chkCol);
+
+    // Export buttons
+    auto *expCol = new QVBoxLayout;
+    expCol->setSpacing(2);
+    expCol->addWidget(m_exportCsvBtn);
+    expCol->addWidget(m_exportImgBtn);
+    expCol->addStretch();
+    row1->addLayout(expCol);
+
     mainLayout->addLayout(row1);
 
     // === Row 2: Live readout ===
@@ -228,7 +247,9 @@ PlotWidget::PlotWidget(QWidget *parent)
     });
 
     connect(m_resetBtn, &QPushButton::clicked, this, [this]() {
-        m_data.clear(); updateChart(); saveSettings();
+        m_data.clear();
+        m_chart->zoomReset();
+        updateChart(); saveSettings();
         m_statusLabel->setText("Ready");
     });
 
@@ -475,9 +496,98 @@ void PlotWidget::createChart() {
 
     m_chartView = new QChartView(m_chart);
     m_chartView->setRenderHint(QPainter::Antialiasing);
-    m_chartView->setRubberBand(QChartView::VerticalRubberBand);
+    m_chartView->setRubberBand(QChartView::RectangleRubberBand);
     m_chartView->setMinimumSize(200, 150);
     m_chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    // === Dual chart for Z/Phase and R+jX ===
+    auto makeSubChart = [this](const QString &, const QString &yLabel) {
+        auto *chart = new QChart;
+        chart->setBackgroundBrush(QColor(Style::Color::Background));
+        chart->setPlotAreaBackgroundBrush(QColor(Style::Color::DarkBackground));
+        chart->setPlotAreaBackgroundVisible(true);
+        chart->setMargins(QMargins(4, 2, 4, 2));
+        // Legend shows series name (Magnitude/Phase/Resistance/Reactance)
+        chart->legend()->show();
+        chart->legend()->setAlignment(Qt::AlignTop);
+        chart->legend()->setLabelColor(QColor(Style::Color::TextGray));
+        QFont lf(Style::Font::Family);
+        lf.setPixelSize(Style::Font::Small);
+        chart->legend()->setFont(lf);
+
+        auto *axisX = new QValueAxis;
+        axisX->setLabelFormat("%.3f");
+        axisX->setRange(28.0, 29.8);
+        axisX->setGridLineColor(QColor(Style::Color::PanelBorder));
+        axisX->setLabelsColor(QColor(Style::Color::TextGray));
+        axisX->setTitleBrush(QColor(Style::Color::TextGray));
+        chart->addAxis(axisX, Qt::AlignBottom);
+
+        auto *axisY = new QValueAxis;
+        axisY->setTitleText(yLabel);
+        axisY->setLabelFormat("%.1f");
+        axisY->setGridLineColor(QColor(Style::Color::PanelBorder));
+        axisY->setLabelsColor(QColor(Style::Color::TextGray));
+        axisY->setTitleBrush(QColor(Style::Color::TextGray));
+        chart->addAxis(axisY, Qt::AlignLeft);
+
+        auto *view = new QChartView(chart);
+        view->setRenderHint(QPainter::Antialiasing);
+        view->setRubberBand(QChartView::RectangleRubberBand);
+
+        return std::make_tuple(chart, view, axisX, axisY);
+    };
+
+    auto [ct, cvt, axt, ayt] = makeSubChart("Magnitude", "Ohms");
+    m_chartTop = ct; m_chartViewTop = cvt; m_axisXTop = axt; m_axisYTop = ayt;
+
+    auto [cb, cvb, axb, ayb] = makeSubChart("Phase", "Degrees");
+    m_chartBot = cb; m_chartViewBot = cvb; m_axisXBot = axb; m_axisYBot = ayb;
+
+    // Top chart: hide X axis labels (shared with bottom)
+    m_axisXTop->setLabelsVisible(false);
+    m_axisXTop->setTitleText("");
+
+    // Bottom chart: show frequency label
+    m_axisXBot->setTitleText("Frequency - MHz");
+
+    // Main title label above both charts
+    m_dualTitle = new QLabel("Z Magnitude & Phase");
+    auto *dualTitle = m_dualTitle;
+    dualTitle->setAlignment(Qt::AlignCenter);
+    QFont dtFont(Style::Font::Family);
+    dtFont.setPixelSize(14);
+    dtFont.setBold(true);
+    dualTitle->setFont(dtFont);
+    dualTitle->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
+
+    m_dualChartWidget = new QWidget;
+    auto *dualLayout = new QVBoxLayout(m_dualChartWidget);
+    dualLayout->setSpacing(0);
+    dualLayout->setContentsMargins(0, 0, 0, 0);
+    dualLayout->addWidget(dualTitle);
+    dualLayout->addWidget(m_chartViewTop, 1);
+    dualLayout->addWidget(m_chartViewBot, 1);
+
+    // Adjust axis label precision when zoom changes range
+    connect(m_axisX, &QValueAxis::rangeChanged, this, [this](qreal min, qreal max) {
+        double span = max - min;
+        if (span < 0.1)       m_axisX->setLabelFormat("%.4f");
+        else if (span < 1.0)  m_axisX->setLabelFormat("%.3f");
+        else                  m_axisX->setLabelFormat("%.2f");
+        m_axisX->setTickCount(qBound(4, static_cast<int>(span / 0.01) + 1, 12));
+    });
+    connect(m_axisY1, &QValueAxis::rangeChanged, this, [this](qreal min, qreal max) {
+        double span = max - min;
+        if (span < 0.5)       m_axisY1->setLabelFormat("%.3f");
+        else if (span < 5.0)  m_axisY1->setLabelFormat("%.2f");
+        else                  m_axisY1->setLabelFormat("%.1f");
+    });
+    connect(m_axisY2, &QValueAxis::rangeChanged, this, [this](qreal min, qreal max) {
+        double span = max - min;
+        if (span < 5.0)  m_axisY2->setLabelFormat("%.2f");
+        else             m_axisY2->setLabelFormat("%.1f");
+    });
 }
 
 double PlotWidget::startFreqMHz() const { return m_startFreq->value(); }
@@ -500,13 +610,43 @@ void PlotWidget::updateReadout(const SweepPoint &pt) {
 }
 
 void PlotWidget::updateChart() {
-    // Switch between QtCharts and Smith Chart widget
+    // Switch between single chart, dual chart, and Smith Chart
     if (m_displayMode == SmithChart) {
-        m_chartStack->setCurrentIndex(1);
+        m_chartStack->setCurrentIndex(2);
         m_smithChart->setData(&m_data);
         return;
     }
-    m_chartStack->setCurrentIndex(0);
+    if (m_displayMode == ZPhase || m_displayMode == RplusJX) {
+        m_chartStack->setCurrentIndex(1);
+        m_chartTop->removeAllSeries();
+        m_chartBot->removeAllSeries();
+
+        double fMin = m_startFreq->value();
+        double fMax = m_stopFreq->value();
+        double pad = qMax(0.005, stepKHz() / 2000.0);
+        m_axisXTop->setRange(fMin - pad, fMax + pad);
+        m_axisXBot->setRange(fMin - pad, fMax + pad);
+
+        if (m_displayMode == ZPhase) {
+            m_dualTitle->setText("Z Magnitude & Phase");
+            m_chartTop->setTitle(""); // Title is in m_dualTitle label
+            m_chartBot->setTitle("");
+            m_axisYTop->setTitleText("Ohms");
+            m_axisYBot->setTitleText("Degrees");
+            m_axisYTop->setRange(0, 100);
+            m_axisYBot->setRange(-90, 90);
+        } else {
+            m_dualTitle->setText("R + jX");
+            m_chartTop->setTitle("");
+            m_chartBot->setTitle("");
+            m_axisYTop->setTitleText("Ohms");
+            m_axisYBot->setTitleText("Ohms");
+            m_axisYTop->setRange(0, 100);
+            m_axisYBot->setRange(-50, 50);
+        }
+    } else {
+        m_chartStack->setCurrentIndex(0);
+    }
 
     m_chart->removeAllSeries();
     m_chart->legend()->hide();
@@ -515,7 +655,7 @@ void PlotWidget::updateChart() {
     switch (m_displayMode) {
         case SwrMode:
             m_chart->setTitle("Standing Wave Ratio");
-            m_axisY1->setTitleText(""); m_axisY1->setRange(1.0, 3.0); break;
+            m_axisY1->setTitleText("SWR"); m_axisY1->setRange(1.0, 3.0); break;
         case RplusJX:
             m_chart->setTitle("R + jX");
             m_axisY1->setTitleText("Ohms"); m_axisY2->setTitleText("Ohms");
@@ -621,7 +761,45 @@ void PlotWidget::plotSWR() {
     m_axisY1->setRange(qMax(1.0, yMin - 0.2), yMax + 0.2);
 }
 
+// Helper to add series to a specific chart (for dual chart mode)
+void PlotWidget::addDualSeries(QChart *chart, QValueAxis *axisX, QValueAxis *axisY,
+                                const QVector<double> &xData, const QVector<double> &yData,
+                                const QColor &color, const QString &name) {
+    QXYSeries *curve;
+    if (m_bestFitCheck->isChecked() && xData.size() >= 5) {
+        auto coeffs = SweepData::polyFit(xData, yData, 4);
+        curve = new QLineSeries;
+        double xMin = xData.first(), xMax = xData.last();
+        for (int i = 0; i <= 200; ++i) {
+            double x = xMin + (xMax - xMin) * i / 200.0;
+            double y = 0;
+            for (int j = 0; j < coeffs.size(); ++j) y += coeffs[j] * std::pow(x, j);
+            curve->append(x, y);
+        }
+    } else if (m_splineCheck->isChecked()) {
+        curve = new QSplineSeries;
+        for (int i = 0; i < xData.size(); ++i) curve->append(xData[i], yData[i]);
+    } else {
+        curve = new QLineSeries;
+        for (int i = 0; i < xData.size(); ++i) curve->append(xData[i], yData[i]);
+    }
+    curve->setName(name);
+    curve->setPen(QPen(color, 2));
+
+    auto *dots = new QScatterSeries;
+    dots->setMarkerSize(5); dots->setColor(color); dots->setBorderColor(color);
+    for (int i = 0; i < xData.size(); ++i) dots->append(xData[i], yData[i]);
+
+    chart->addSeries(curve); chart->addSeries(dots);
+    curve->attachAxis(axisX); curve->attachAxis(axisY);
+    dots->attachAxis(axisX); dots->attachAxis(axisY);
+    // Hide scatter dots from legend
+    auto markers = chart->legend()->markers(dots);
+    if (!markers.isEmpty()) markers.first()->setVisible(false);
+}
+
 void PlotWidget::plotRplusJX() {
+
     QVector<double> freq, rData, xData;
     double rMin=999, rMax=-999, xMin=999, xMax=-999;
     for (int i = 0; i < m_data.count(); ++i) {
@@ -631,13 +809,20 @@ void PlotWidget::plotRplusJX() {
         rMin=qMin(rMin,m_data.at(i).resistance); rMax=qMax(rMax,m_data.at(i).resistance);
         xMin=qMin(xMin,m_data.at(i).reactance); xMax=qMax(xMax,m_data.at(i).reactance);
     }
-    addSeries(freq, rData, QColor(Style::Color::AccentCyan), m_axisY1);
-    addSeries(freq, xData, QColor(Style::Color::StatusRed), m_axisY2);
-    m_axisY1->setRange(qMax(0.0, rMin-10), rMax+10);
-    m_axisY2->setRange(xMin-10, xMax+10);
+
+    double fMin = freq.first(), fMax = freq.last();
+    double pad = qMax(0.005, stepKHz() / 2000.0);
+    m_axisXTop->setRange(fMin - pad, fMax + pad);
+    m_axisXBot->setRange(fMin - pad, fMax + pad);
+    m_axisYTop->setRange(qMax(0.0, rMin-10), rMax+10);
+    m_axisYBot->setRange(xMin-10, xMax+10);
+
+    addDualSeries(m_chartTop, m_axisXTop, m_axisYTop, freq, rData, QColor(Style::Color::AccentCyan), "Resistance");
+    addDualSeries(m_chartBot, m_axisXBot, m_axisYBot, freq, xData, QColor(Style::Color::StatusRed), "Reactance");
 }
 
 void PlotWidget::plotZPhase() {
+
     QVector<double> freq, zData, pData;
     double zMin=999, zMax=0, pMin=999, pMax=-999;
     for (int i = 0; i < m_data.count(); ++i) {
@@ -647,10 +832,16 @@ void PlotWidget::plotZPhase() {
         zMin=qMin(zMin,m_data.at(i).impedance); zMax=qMax(zMax,m_data.at(i).impedance);
         pMin=qMin(pMin,m_data.at(i).phase); pMax=qMax(pMax,m_data.at(i).phase);
     }
-    addSeries(freq, zData, QColor(Style::Color::AccentCyan), m_axisY1);
-    addSeries(freq, pData, QColor(Style::Color::StatusRed), m_axisY2);
-    m_axisY1->setRange(qMax(0.0, zMin-10), zMax+10);
-    m_axisY2->setRange(pMin-10, pMax+10);
+
+    double fMin = freq.first(), fMax = freq.last();
+    double pad = qMax(0.005, stepKHz() / 2000.0);
+    m_axisXTop->setRange(fMin - pad, fMax + pad);
+    m_axisXBot->setRange(fMin - pad, fMax + pad);
+    m_axisYTop->setRange(qMax(0.0, zMin-10), zMax+10);
+    m_axisYBot->setRange(pMin-10, pMax+10);
+
+    addDualSeries(m_chartTop, m_axisXTop, m_axisYTop, freq, zData, QColor(Style::Color::AccentCyan), "Magnitude");
+    addDualSeries(m_chartBot, m_axisXBot, m_axisYBot, freq, pData, QColor(Style::Color::StatusRed), "Phase");
 }
 
 void PlotWidget::plotReturnLoss() {

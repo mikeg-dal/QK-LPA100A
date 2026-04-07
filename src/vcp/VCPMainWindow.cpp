@@ -152,6 +152,7 @@ void VCPMainWindow::createUI() {
         l->setFont(valueFont);
         l->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
         l->setAlignment(Qt::AlignRight);
+        l->setMinimumWidth(65);
         return l;
     };
 
@@ -186,14 +187,17 @@ void VCPMainWindow::createUI() {
     mainLayout->addWidget(m_rawLabel);
 
     // --- Status bar ---
-    m_statusLabel = new QLabel("Disconnected");
-    QFont statusFont(Style::Font::Family);
+    QFont statusFont(Style::Font::Monospace);
     statusFont.setPixelSize(Style::Font::Small);
+
+    m_statusLabel = new QLabel("Disconnected");
     m_statusLabel->setFont(statusFont);
+    m_statusLabel->setContentsMargins(4, 0, 0, 0);
     m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
 
     m_rigStatusLabel = new QLabel("Rig: Disconnected");
     m_rigStatusLabel->setFont(statusFont);
+    m_rigStatusLabel->setContentsMargins(0, 0, 4, 0);
     m_rigStatusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
 
     statusBar()->addWidget(m_statusLabel, 1);
@@ -273,15 +277,19 @@ void VCPMainWindow::openPlotWindow() {
     connect(plotWidget, &PlotWidget::rigConnectRequested, this,
             [this](int modelId, const QString &port, int baudRate) {
         m_rigStatusLabel->setText("Rig: Connecting...");
+        m_rigStatusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
         if (m_hamlib->open(modelId, port, baudRate)) {
             m_rigStatusLabel->setText("Rig: " + m_hamlib->rigName());
+            m_rigStatusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusGreen));
         } else {
             m_rigStatusLabel->setText("Rig: " + m_hamlib->errorString());
+            m_rigStatusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusRed));
         }
     });
     connect(plotWidget, &PlotWidget::rigDisconnectRequested, this, [this]() {
         m_hamlib->close();
         m_rigStatusLabel->setText("Rig: Disconnected");
+        m_rigStatusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
     });
     connect(plotWidget, &QObject::destroyed, this, [this]() {
         m_plotWindow = nullptr;
@@ -409,10 +417,15 @@ void VCPMainWindow::onConnectionChanged(bool connected) {
 void VCPMainWindow::updateConnectionUI(bool connected) {
     m_connectAction->setEnabled(!connected);
     m_disconnectAction->setEnabled(connected);
-    m_statusLabel->setText(connected
-        ? (m_useTcp ? QString("LP-100A: %1:%2").arg(m_tcpHost).arg(m_tcpPort)
-                    : QString("LP-100A: %1").arg(m_serialPort))
-        : "Disconnected");
+    if (connected) {
+        QString text = m_useTcp ? QString("LP-100A: %1:%2").arg(m_tcpHost).arg(m_tcpPort)
+                                : QString("LP-100A: %1").arg(m_serialPort);
+        m_statusLabel->setText(text);
+        m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusGreen));
+    } else {
+        m_statusLabel->setText("Disconnected");
+        m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::TextGray));
+    }
 }
 
 // --- Data handling ---
