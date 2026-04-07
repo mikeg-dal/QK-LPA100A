@@ -29,8 +29,17 @@ QPointF SmithChartWidget::impedanceToPixel(double r, double x) const {
 
     // Möbius transform: z → Γ
     double denom = (rn + 1.0) * (rn + 1.0) + xn * xn;
+    if (denom < 1e-12) denom = 1e-12; // Guard against division by zero
     double gr = (rn * rn + xn * xn - 1.0) / denom;
     double gi = (2.0 * xn) / denom;
+
+    // Clamp to unit circle for safety
+    double mag = gr * gr + gi * gi;
+    if (mag > 1.0) {
+        double scale = 1.0 / std::sqrt(mag);
+        gr *= scale;
+        gi *= scale;
+    }
 
     // Γ-plane to pixels (y inverted for Qt)
     return QPointF(m_center.x() + gr * m_radius,

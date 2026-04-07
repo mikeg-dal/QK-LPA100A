@@ -41,6 +41,10 @@ public:
     // Reflection coefficient: gamma = (SWR-1)/(SWR+1)
     static double reflectionCoeff(double swr);
 
+    // 4th order polynomial best fit: y = a0 + a1*x + a2*x² + a3*x³ + a4*x⁴
+    // Returns coefficients [a0..a4]. Pass x and y vectors of equal size.
+    static QVector<double> polyFit(const QVector<double> &x, const QVector<double> &y, int order = 4);
+
     // Export to CSV
     bool exportCsv(const QString &path) const;
 

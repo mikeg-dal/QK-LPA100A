@@ -57,6 +57,8 @@ private slots:
 private:
     void createControls();
     void createChart();
+    void addSeries(const QVector<double> &x, const QVector<double> &y,
+                   const QColor &color, QValueAxis *yAxis);
     void plotSWR();
     void plotRplusJX();
     void plotZPhase();
@@ -102,6 +104,8 @@ private:
     QComboBox *m_rigBaudCombo;
     QDoubleSpinBox *m_powerSpin;
     QPushButton *m_rigConnectBtn;
+    QPushButton *m_exportCsvBtn;
+    QPushButton *m_exportImgBtn;
 
     // Row 4: raw LP-100A string
     QLabel *m_rawLabel;

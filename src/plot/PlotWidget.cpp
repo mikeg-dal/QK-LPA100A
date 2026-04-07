@@ -13,6 +13,7 @@
 #include <QApplication>
 #include <QLineEdit>
 #include <QCloseEvent>
+#include <QFileDialog>
 #include <cmath>
 
 PlotWidget::PlotWidget(QWidget *parent)
@@ -48,6 +49,8 @@ PlotWidget::PlotWidget(QWidget *parent)
     row1->addWidget(m_signCheck);
     row1->addWidget(m_splineCheck);
     row1->addWidget(m_bestFitCheck);
+    row1->addWidget(m_exportCsvBtn);
+    row1->addWidget(m_exportImgBtn);
     mainLayout->addLayout(row1);
 
     // === Row 2: Live readout ===
@@ -229,6 +232,27 @@ PlotWidget::PlotWidget(QWidget *parent)
         m_statusLabel->setText("Ready");
     });
 
+    // Export buttons
+    connect(m_exportCsvBtn, &QPushButton::clicked, this, [this]() {
+        if (m_data.isEmpty()) { m_statusLabel->setText("No data to export"); return; }
+        QString path = QFileDialog::getSaveFileName(this, "Export CSV", "", "CSV Files (*.csv)");
+        if (!path.isEmpty()) {
+            m_data.exportCsv(path);
+            m_statusLabel->setText("Exported: " + path);
+        }
+    });
+    connect(m_exportImgBtn, &QPushButton::clicked, this, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, "Save Image", "", "PNG Images (*.png)");
+        if (!path.isEmpty()) {
+            QWidget *active = (m_displayMode == SmithChart)
+                ? static_cast<QWidget *>(m_smithChart)
+                : static_cast<QWidget *>(m_chartView);
+            QPixmap pixmap = active->grab();
+            pixmap.save(path);
+            m_statusLabel->setText("Saved: " + path);
+        }
+    });
+
     // Restore saved settings
     loadSettings();
 }
@@ -338,6 +362,13 @@ void PlotWidget::createControls() {
     m_splineCheck = new QCheckBox("Spline");
     m_bestFitCheck = new QCheckBox("Best Fit");
     m_signCheck->setChecked(true);
+
+    m_exportCsvBtn = new QPushButton("CSV");
+    m_exportImgBtn = new QPushButton("Image");
+    m_exportCsvBtn->setStyleSheet(Style::buttonCompact());
+    m_exportImgBtn->setStyleSheet(Style::buttonCompact());
+    m_exportCsvBtn->setFixedHeight(Style::Layout::CompactButtonHeight);
+    m_exportImgBtn->setFixedHeight(Style::Layout::CompactButtonHeight);
 
     // Sweep settings
     m_sampleCombo = new QComboBox;
@@ -532,95 +563,115 @@ void PlotWidget::updateChart() {
     }
 }
 
-void PlotWidget::plotSWR() {
-    auto *series = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    series->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
-
+// Helper: add a data series (line or spline or best-fit) + scatter dots
+void PlotWidget::addSeries(const QVector<double> &xData, const QVector<double> &yData,
+                           const QColor &color, QValueAxis *yAxis) {
+    // Scatter dots (raw data points)
     auto *dots = new QScatterSeries;
     dots->setMarkerSize(6);
-    dots->setColor(QColor(Style::Color::AccentCyan));
-    dots->setBorderColor(QColor(Style::Color::AccentCyan));
+    dots->setColor(color);
+    dots->setBorderColor(color);
+    for (int i = 0; i < xData.size(); ++i)
+        dots->append(xData[i], yData[i]);
 
+    // Line/spline/best-fit curve
+    QXYSeries *curve;
+    if (m_bestFitCheck->isChecked() && xData.size() >= 5) {
+        // 4th order polynomial best fit
+        auto coeffs = SweepData::polyFit(xData, yData, 4);
+        curve = new QLineSeries;
+        double xMin = xData.first(), xMax = xData.last();
+        int numPts = 200;
+        for (int i = 0; i <= numPts; ++i) {
+            double x = xMin + (xMax - xMin) * i / numPts;
+            double y = 0;
+            for (int j = 0; j < coeffs.size(); ++j)
+                y += coeffs[j] * std::pow(x, j);
+            curve->append(x, y);
+        }
+    } else if (m_splineCheck->isChecked()) {
+        curve = new QSplineSeries;
+        for (int i = 0; i < xData.size(); ++i)
+            curve->append(xData[i], yData[i]);
+    } else {
+        curve = new QLineSeries;
+        for (int i = 0; i < xData.size(); ++i)
+            curve->append(xData[i], yData[i]);
+    }
+    curve->setPen(QPen(color, 2));
+
+    m_chart->addSeries(curve);
+    m_chart->addSeries(dots);
+    curve->attachAxis(m_axisX);
+    curve->attachAxis(yAxis);
+    dots->attachAxis(m_axisX);
+    dots->attachAxis(yAxis);
+}
+
+void PlotWidget::plotSWR() {
+    QVector<double> x, y;
     double yMin = 999, yMax = 0;
     for (int i = 0; i < m_data.count(); ++i) {
-        series->append(m_data.at(i).freqMHz, m_data.at(i).swr);
-        dots->append(m_data.at(i).freqMHz, m_data.at(i).swr);
-        yMin = qMin(yMin, m_data.at(i).swr); yMax = qMax(yMax, m_data.at(i).swr);
+        x.append(m_data.at(i).freqMHz);
+        y.append(m_data.at(i).swr);
+        yMin = qMin(yMin, m_data.at(i).swr);
+        yMax = qMax(yMax, m_data.at(i).swr);
     }
-    m_chart->addSeries(series); m_chart->addSeries(dots);
-    series->attachAxis(m_axisX); series->attachAxis(m_axisY1);
-    dots->attachAxis(m_axisX); dots->attachAxis(m_axisY1);
+    addSeries(x, y, QColor(Style::Color::AccentCyan), m_axisY1);
     m_axisY1->setRange(qMax(1.0, yMin - 0.2), yMax + 0.2);
 }
 
 void PlotWidget::plotRplusJX() {
-    auto *rS = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    rS->setName("Resistance"); rS->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
-    auto *xS = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    xS->setName("Reactance"); xS->setPen(QPen(QColor(Style::Color::StatusRed), 2));
-
+    QVector<double> freq, rData, xData;
     double rMin=999, rMax=-999, xMin=999, xMax=-999;
     for (int i = 0; i < m_data.count(); ++i) {
-        rS->append(m_data.at(i).freqMHz, m_data.at(i).resistance);
-        xS->append(m_data.at(i).freqMHz, m_data.at(i).reactance);
+        freq.append(m_data.at(i).freqMHz);
+        rData.append(m_data.at(i).resistance);
+        xData.append(m_data.at(i).reactance);
         rMin=qMin(rMin,m_data.at(i).resistance); rMax=qMax(rMax,m_data.at(i).resistance);
         xMin=qMin(xMin,m_data.at(i).reactance); xMax=qMax(xMax,m_data.at(i).reactance);
     }
-    m_chart->addSeries(rS); m_chart->addSeries(xS);
-    rS->attachAxis(m_axisX); rS->attachAxis(m_axisY1);
-    xS->attachAxis(m_axisX); xS->attachAxis(m_axisY2);
+    addSeries(freq, rData, QColor(Style::Color::AccentCyan), m_axisY1);
+    addSeries(freq, xData, QColor(Style::Color::StatusRed), m_axisY2);
     m_axisY1->setRange(qMax(0.0, rMin-10), rMax+10);
     m_axisY2->setRange(xMin-10, xMax+10);
 }
 
 void PlotWidget::plotZPhase() {
-    auto *zS = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    zS->setName("Magnitude"); zS->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
-    auto *pS = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    pS->setName("Phase"); pS->setPen(QPen(QColor(Style::Color::StatusRed), 2));
-
+    QVector<double> freq, zData, pData;
     double zMin=999, zMax=0, pMin=999, pMax=-999;
     for (int i = 0; i < m_data.count(); ++i) {
-        zS->append(m_data.at(i).freqMHz, m_data.at(i).impedance);
-        pS->append(m_data.at(i).freqMHz, m_data.at(i).phase);
+        freq.append(m_data.at(i).freqMHz);
+        zData.append(m_data.at(i).impedance);
+        pData.append(m_data.at(i).phase);
         zMin=qMin(zMin,m_data.at(i).impedance); zMax=qMax(zMax,m_data.at(i).impedance);
         pMin=qMin(pMin,m_data.at(i).phase); pMax=qMax(pMax,m_data.at(i).phase);
     }
-    m_chart->addSeries(zS); m_chart->addSeries(pS);
-    zS->attachAxis(m_axisX); zS->attachAxis(m_axisY1);
-    pS->attachAxis(m_axisX); pS->attachAxis(m_axisY2);
+    addSeries(freq, zData, QColor(Style::Color::AccentCyan), m_axisY1);
+    addSeries(freq, pData, QColor(Style::Color::StatusRed), m_axisY2);
     m_axisY1->setRange(qMax(0.0, zMin-10), zMax+10);
     m_axisY2->setRange(pMin-10, pMax+10);
 }
 
 void PlotWidget::plotReturnLoss() {
-    auto *s = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    s->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    QVector<double> freq, rl;
     double yMin=999, yMax=0;
     for (int i = 0; i < m_data.count(); ++i) {
-        double rl = SweepData::returnLoss(m_data.at(i).swr);
-        s->append(m_data.at(i).freqMHz, rl);
-        yMin=qMin(yMin,rl); yMax=qMax(yMax,rl);
+        freq.append(m_data.at(i).freqMHz);
+        double val = SweepData::returnLoss(m_data.at(i).swr);
+        rl.append(val);
+        yMin=qMin(yMin,val); yMax=qMax(yMax,val);
     }
-    m_chart->addSeries(s);
-    s->attachAxis(m_axisX); s->attachAxis(m_axisY1);
+    addSeries(freq, rl, QColor(Style::Color::AccentCyan), m_axisY1);
     m_axisY1->setRange(qMax(0.0, yMin-2), yMax+2);
 }
 
 void PlotWidget::plotReflCoeff() {
-    auto *s = m_splineCheck->isChecked()
-        ? static_cast<QXYSeries *>(new QSplineSeries) : static_cast<QXYSeries *>(new QLineSeries);
-    s->setPen(QPen(QColor(Style::Color::AccentCyan), 2));
+    QVector<double> freq, gamma;
     for (int i = 0; i < m_data.count(); ++i) {
-        s->append(m_data.at(i).freqMHz, SweepData::reflectionCoeff(m_data.at(i).swr));
+        freq.append(m_data.at(i).freqMHz);
+        gamma.append(SweepData::reflectionCoeff(m_data.at(i).swr));
     }
-    m_chart->addSeries(s);
-    s->attachAxis(m_axisX); s->attachAxis(m_axisY1);
+    addSeries(freq, gamma, QColor(Style::Color::AccentCyan), m_axisY1);
     m_axisY1->setRange(0, 1.0);
 }

@@ -47,6 +47,62 @@ double SweepData::reflectionCoeff(double swr) {
     return (swr - 1.0) / (swr + 1.0);
 }
 
+QVector<double> SweepData::polyFit(const QVector<double> &x, const QVector<double> &y, int order) {
+    int n = x.size();
+    int m = order + 1;
+    QVector<double> coeffs(m, 0.0);
+
+    if (n < m) return coeffs;
+
+    // Build augmented matrix for normal equations (Vandermonde approach)
+    // Matrix is m x (m+1)
+    QVector<QVector<double>> mat(m, QVector<double>(m + 1, 0.0));
+
+    for (int row = 0; row < m; ++row) {
+        for (int col = 0; col < m; ++col) {
+            double sum = 0;
+            for (int i = 0; i < n; ++i)
+                sum += std::pow(x[i], row + col);
+            mat[row][col] = sum;
+        }
+        double sum = 0;
+        for (int i = 0; i < n; ++i)
+            sum += y[i] * std::pow(x[i], row);
+        mat[row][m] = sum;
+    }
+
+    // Gaussian elimination with partial pivoting
+    for (int col = 0; col < m; ++col) {
+        // Find pivot
+        int maxRow = col;
+        for (int row = col + 1; row < m; ++row) {
+            if (std::abs(mat[row][col]) > std::abs(mat[maxRow][col]))
+                maxRow = row;
+        }
+        std::swap(mat[col], mat[maxRow]);
+
+        if (std::abs(mat[col][col]) < 1e-12) continue;
+
+        // Eliminate below
+        for (int row = col + 1; row < m; ++row) {
+            double factor = mat[row][col] / mat[col][col];
+            for (int j = col; j <= m; ++j)
+                mat[row][j] -= factor * mat[col][j];
+        }
+    }
+
+    // Back substitution
+    for (int row = m - 1; row >= 0; --row) {
+        coeffs[row] = mat[row][m];
+        for (int col = row + 1; col < m; ++col)
+            coeffs[row] -= mat[row][col] * coeffs[col];
+        if (std::abs(mat[row][row]) > 1e-12)
+            coeffs[row] /= mat[row][row];
+    }
+
+    return coeffs;
+}
+
 bool SweepData::exportCsv(const QString &path) const {
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
