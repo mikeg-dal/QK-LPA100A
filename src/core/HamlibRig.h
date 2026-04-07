@@ -38,6 +38,7 @@ public:
     bool setMode(const QString &mode, int passband = 0);
     QString getMode();
     bool setRFPower(double level); // 0.0-1.0
+    bool sendMorse(const QString &text);
 
     // Info
     QString errorString() const { return m_errorString; }

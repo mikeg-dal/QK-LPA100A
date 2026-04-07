@@ -180,6 +180,31 @@ PlotWidget::PlotWidget(QWidget *parent)
     statusRow->addWidget(m_statusLabel);
     mainLayout->addLayout(statusRow);
 
+    // === Auto-save settings on any control change ===
+    auto save = [this]() { saveSettings(); };
+    connect(m_startFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, save);
+    connect(m_stopFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, save);
+    connect(m_stepCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+    connect(m_sampleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+    connect(m_settleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+    connect(m_txModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+    connect(m_powerSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, save);
+    connect(m_rigCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+    connect(m_rigPortCombo, &QComboBox::currentTextChanged, this, save);
+    connect(m_rigBaudCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, save);
+
+    // === Update chart X-axis when frequency range changes ===
+    auto updateAxisRange = [this]() {
+        double fMin = m_startFreq->value();
+        double fMax = m_stopFreq->value();
+        double pad = 0.0;
+        m_axisX->setRange(fMin - pad, fMax + pad);
+        m_axisXTop->setRange(fMin - pad, fMax + pad);
+        m_axisXBot->setRange(fMin - pad, fMax + pad);
+    };
+    connect(m_startFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, updateAxisRange);
+    connect(m_stopFreq, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, updateAxisRange);
+
     // === Connections ===
     connect(m_displayCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &PlotWidget::onDisplayModeChanged);
@@ -325,6 +350,15 @@ void PlotWidget::closeEvent(QCloseEvent *event) {
     QWidget::closeEvent(event);
 }
 
+void PlotWidget::setRig(HamlibRig *rig) {
+    m_rig = rig;
+    // If rig is already connected, update UI to reflect that
+    if (m_rig && m_rig->isOpen()) {
+        m_rigConnectBtn->setText("Disconnect Rig");
+        m_statusLabel->setText("Rig: " + m_rig->rigName());
+    }
+}
+
 void PlotWidget::setLP100A(LP100AProtocol *lp100a) {
     if (m_lp100a) {
         disconnect(m_lp100a, nullptr, m_rawLabel, nullptr);
@@ -355,8 +389,8 @@ void PlotWidget::saveSettings() {
 
 void PlotWidget::loadSettings() {
     QSettings s("AI5QK", "QK-LP100A");
-    m_startFreq->setValue(s.value("plot/startFreq", 28.0).toDouble());
-    m_stopFreq->setValue(s.value("plot/stopFreq", 29.7).toDouble());
+    m_startFreq->setValue(s.value("plot/startFreq", 14.0).toDouble());
+    m_stopFreq->setValue(s.value("plot/stopFreq", 14.35).toDouble());
     m_stepCombo->setCurrentIndex(s.value("plot/stepIdx", 2).toInt());
     m_displayCombo->setCurrentIndex(s.value("plot/displayIdx", 2).toInt());
     m_sampleCombo->setCurrentIndex(s.value("plot/sampleIdx", 2).toInt());
@@ -372,8 +406,12 @@ void PlotWidget::loadSettings() {
         m_rigCombo->setCurrentIndex(rigIdx);
 
     QString rigPort = s.value("plot/rigPort", "").toString();
-    if (!rigPort.isEmpty())
+    if (!rigPort.isEmpty()) {
+        // Add TCP addresses that aren't in the serial port list
+        if (m_rigPortCombo->findText(rigPort) < 0)
+            m_rigPortCombo->addItem(rigPort);
         m_rigPortCombo->setCurrentText(rigPort);
+    }
 
     QString rigBaud = s.value("plot/rigBaud", "38400").toString();
     m_rigBaudCombo->setCurrentText(rigBaud);
@@ -384,14 +422,14 @@ void PlotWidget::createControls() {
     m_startFreq->setRange(0.1, 60.0);
     m_startFreq->setDecimals(3);
     m_startFreq->setSuffix(" MHz");
-    m_startFreq->setValue(28.0);
+    m_startFreq->setValue(14.0);
     m_startFreq->setFixedWidth(130);
 
     m_stopFreq = new QDoubleSpinBox;
     m_stopFreq->setRange(0.1, 60.0);
     m_stopFreq->setDecimals(3);
     m_stopFreq->setSuffix(" MHz");
-    m_stopFreq->setValue(29.7);
+    m_stopFreq->setValue(14.35);
     m_stopFreq->setFixedWidth(130);
 
     m_stepCombo = new QComboBox;
@@ -469,7 +507,7 @@ void PlotWidget::createControls() {
     m_settleCombo->setCurrentIndex(3);
 
     m_txModeCombo = new QComboBox;
-    m_txModeCombo->addItems({"CW", "AM", "FSK", "USB", "LSB"});
+    m_txModeCombo->addItems({"CW", "USB", "LSB", "AM", "RTTY", "RTTYR", "PKTUSB", "PKTLSB", "FM"});
 
     // Rig setup (inline, like the Windows Plot bottom row)
     m_rigCombo = new QComboBox;
@@ -502,7 +540,7 @@ void PlotWidget::createControls() {
     m_rigBaudCombo->setCurrentText("38400");
 
     m_powerSpin = new QDoubleSpinBox;
-    m_powerSpin->setRange(1, 100);
+    m_powerSpin->setRange(5, 100);
     m_powerSpin->setSingleStep(5);
     m_powerSpin->setValue(10);
     m_powerSpin->setDecimals(0);
@@ -519,14 +557,22 @@ void PlotWidget::createChart() {
     m_chart->setPlotAreaBackgroundBrush(QColor(Style::Color::DarkBackground));
     m_chart->setPlotAreaBackgroundVisible(true);
     m_chart->legend()->hide();
-    m_chart->setMargins(QMargins(4, 4, 4, 4));
-
+    m_chart->setMargins(QMargins(2, 2, 2, 4));
     m_chart->setTitle(""); // Title replaced by display mode combo above chart
+
+    // Compact axis fonts for small-window readability
+    QFont axisLabelFont(Style::Font::Family);
+    axisLabelFont.setPixelSize(Style::Font::Small);
+    QFont axisTitleFont(Style::Font::Family);
+    axisTitleFont.setPixelSize(Style::Font::Normal);
 
     m_axisX = new QValueAxis;
     m_axisX->setTitleText("Frequency - MHz");
+    m_axisX->setTitleFont(axisTitleFont);
+    m_axisX->setLabelsFont(axisLabelFont);
     m_axisX->setLabelFormat("%.3f");
-    m_axisX->setRange(28.0, 29.8);
+    m_axisX->setRange(14.0, 14.35);
+    m_axisX->setLabelsAngle(-35);
     m_axisX->setGridLineColor(QColor(Style::Color::PanelBorder));
     m_axisX->setLabelsColor(QColor(Style::Color::TextGray));
     m_axisX->setTitleBrush(QColor(Style::Color::TextGray));
@@ -534,6 +580,8 @@ void PlotWidget::createChart() {
 
     m_axisY1 = new QValueAxis;
     m_axisY1->setRange(1.0, 3.0);
+    m_axisY1->setLabelsFont(axisLabelFont);
+    m_axisY1->setTitleFont(axisTitleFont);
     m_axisY1->setLabelFormat("%.1f");
     m_axisY1->setGridLineColor(QColor(Style::Color::PanelBorder));
     m_axisY1->setLabelsColor(QColor(Style::Color::TextGray));
@@ -541,6 +589,8 @@ void PlotWidget::createChart() {
     m_chart->addAxis(m_axisY1, Qt::AlignLeft);
 
     m_axisY2 = new QValueAxis;
+    m_axisY2->setLabelsFont(axisLabelFont);
+    m_axisY2->setTitleFont(axisTitleFont);
     m_axisY2->setGridLineColor(QColor(Style::Color::PanelBorder));
     m_axisY2->setLabelsColor(QColor(Style::Color::TextGray));
     m_axisY2->setTitleBrush(QColor(Style::Color::TextGray));
@@ -554,23 +604,20 @@ void PlotWidget::createChart() {
     m_chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     // === Dual chart for Z/Phase and R+jX ===
-    auto makeSubChart = [this](const QString &, const QString &yLabel) {
+    auto makeSubChart = [this, &axisLabelFont, &axisTitleFont](const QString &, const QString &yLabel) {
         auto *chart = new QChart;
         chart->setBackgroundBrush(QColor(Style::Color::Background));
         chart->setPlotAreaBackgroundBrush(QColor(Style::Color::DarkBackground));
         chart->setPlotAreaBackgroundVisible(true);
-        chart->setMargins(QMargins(4, 2, 4, 2));
-        // Legend shows series name (Magnitude/Phase/Resistance/Reactance)
-        chart->legend()->show();
-        chart->legend()->setAlignment(Qt::AlignTop);
-        chart->legend()->setLabelColor(QColor(Style::Color::TextGray));
-        QFont lf(Style::Font::Family);
-        lf.setPixelSize(Style::Font::Small);
-        chart->legend()->setFont(lf);
+        chart->setMargins(QMargins(40, 2, 2, 2));  // Fixed left margin for consistent plot width
+        chart->legend()->hide();
 
         auto *axisX = new QValueAxis;
-        axisX->setLabelFormat("%.3f");
-        axisX->setRange(28.0, 29.8);
+        axisX->setLabelsFont(axisLabelFont);
+        axisX->setTitleFont(axisTitleFont);
+        axisX->setLabelFormat("%.1f");
+        axisX->setRange(14.0, 14.35);
+        // Horizontal labels like the Windows version
         axisX->setGridLineColor(QColor(Style::Color::PanelBorder));
         axisX->setLabelsColor(QColor(Style::Color::TextGray));
         axisX->setTitleBrush(QColor(Style::Color::TextGray));
@@ -578,10 +625,11 @@ void PlotWidget::createChart() {
 
         auto *axisY = new QValueAxis;
         axisY->setTitleText(yLabel);
+        axisY->setLabelsFont(axisLabelFont);
+        axisY->setTitleFont(axisTitleFont);
         axisY->setLabelFormat("%.1f");
         axisY->setGridLineColor(QColor(Style::Color::PanelBorder));
         axisY->setLabelsColor(QColor(Style::Color::TextGray));
-        axisY->setTitleBrush(QColor(Style::Color::TextGray));
         chart->addAxis(axisY, Qt::AlignLeft);
 
         auto *view = new QChartView(chart);
@@ -597,38 +645,38 @@ void PlotWidget::createChart() {
     auto [cb, cvb, axb, ayb] = makeSubChart("Phase", "Degrees");
     m_chartBot = cb; m_chartViewBot = cvb; m_axisXBot = axb; m_axisYBot = ayb;
 
-    // Top chart: hide X axis labels (shared with bottom)
+    // Top chart: hide X labels (bottom chart shows frequency axis)
+    // Add bottom margin to match the space bottom chart loses to X-axis labels + title
+    m_chartTop->setMargins(QMargins(40, 2, 2, 30));
     m_axisXTop->setLabelsVisible(false);
     m_axisXTop->setTitleText("");
 
-    // Bottom chart: show frequency label
+    // Bottom chart: horizontal frequency labels + title (like Windows LP-100 Plot)
     m_axisXBot->setTitleText("Frequency - MHz");
 
-    // Main title label above both charts
-    m_dualTitle = new QLabel("Z Magnitude & Phase");
-    auto *dualTitle = m_dualTitle;
-    dualTitle->setAlignment(Qt::AlignCenter);
-    QFont dtFont(Style::Font::Family);
-    dtFont.setPixelSize(14);
-    dtFont.setBold(true);
-    dualTitle->setFont(dtFont);
-    dualTitle->setStyleSheet(QString("color: %1;").arg(Style::Color::TextWhite));
+    // No separate title label — the display combo above the chart stack serves as the title
 
     m_dualChartWidget = new QWidget;
     auto *dualLayout = new QVBoxLayout(m_dualChartWidget);
     dualLayout->setSpacing(0);
     dualLayout->setContentsMargins(0, 0, 0, 0);
-    dualLayout->addWidget(dualTitle);
     dualLayout->addWidget(m_chartViewTop, 1);
     dualLayout->addWidget(m_chartViewBot, 1);
 
-    // Adjust axis label precision when zoom changes range
+    // Adjust X-axis ticks when range changes — always kHz resolution for ham radio
     connect(m_axisX, &QValueAxis::rangeChanged, this, [this](qreal min, qreal max) {
+        Q_UNUSED(min);
+        Q_UNUSED(max);
+        m_axisX->setLabelFormat("%.3f");
+        // Pick a round tick interval based on span
         double span = max - min;
-        if (span < 0.1)       m_axisX->setLabelFormat("%.4f");
-        else if (span < 1.0)  m_axisX->setLabelFormat("%.3f");
-        else                  m_axisX->setLabelFormat("%.2f");
-        m_axisX->setTickCount(qBound(4, static_cast<int>(span / 0.01) + 1, 12));
+        double intervals[] = {0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0};
+        double tickInterval = 1.0;
+        for (double iv : intervals) {
+            int ticks = static_cast<int>(span / iv) + 1;
+            if (ticks >= 4 && ticks <= 10) { tickInterval = iv; break; }
+        }
+        m_axisX->setTickCount(static_cast<int>(span / tickInterval) + 1);
     });
     connect(m_axisY1, &QValueAxis::rangeChanged, this, [this](qreal min, qreal max) {
         double span = max - min;
@@ -676,26 +724,32 @@ void PlotWidget::updateChart() {
 
         double fMin = m_startFreq->value();
         double fMax = m_stopFreq->value();
-        double pad = qMax(0.005, stepKHz() / 2000.0);
+        double pad = 0.0;
         m_axisXTop->setRange(fMin - pad, fMax + pad);
         m_axisXBot->setRange(fMin - pad, fMax + pad);
 
         if (m_displayMode == ZPhase) {
-            m_dualTitle->setText("Z Magnitude & Phase");
-            m_chartTop->setTitle(""); // Title is in m_dualTitle label
-            m_chartBot->setTitle("");
-            m_axisYTop->setTitleText("Ohms");
-            m_axisYBot->setTitleText("Degrees");
+            m_axisYTop->setTitleText("Z (Ohms)");
+            m_axisYTop->setTitleBrush(QColor(Style::Color::AccentCyan));
+            m_axisYBot->setTitleText("Phase (\u00B0)");
+            m_axisYBot->setTitleBrush(QColor(Style::Color::StatusRed));
             m_axisYTop->setRange(0, 100);
+            m_axisYTop->setTickCount(5);
+            m_axisYTop->setLabelFormat("% .0f");  // Space prefix matches minus sign width
             m_axisYBot->setRange(-90, 90);
+            m_axisYBot->setTickCount(5);
+            m_axisYBot->setLabelFormat("% .0f");
         } else {
-            m_dualTitle->setText("R + jX");
-            m_chartTop->setTitle("");
-            m_chartBot->setTitle("");
-            m_axisYTop->setTitleText("Ohms");
-            m_axisYBot->setTitleText("Ohms");
+            m_axisYTop->setTitleText("R (Ohms)");
+            m_axisYTop->setTitleBrush(QColor(Style::Color::AccentCyan));
+            m_axisYBot->setTitleText("X (Ohms)");
+            m_axisYBot->setTitleBrush(QColor(Style::Color::StatusRed));
             m_axisYTop->setRange(0, 100);
+            m_axisYTop->setTickCount(5);
+            m_axisYTop->setLabelFormat("% .0f");  // Space prefix matches minus sign width
             m_axisYBot->setRange(-50, 50);
+            m_axisYBot->setTickCount(5);
+            m_axisYBot->setLabelFormat("% .0f");
         }
     } else {
         m_chartStack->setCurrentIndex(0);
@@ -736,7 +790,7 @@ void PlotWidget::updateChart() {
 
     m_axisX->setLabelFormat("%.3f");  // Always kHz resolution for ham radio
     double stepMHz = stepKHz() / 1000.0;
-    double pad = qMax(0.005, stepMHz / 2.0);  // Pad by half a step
+    double pad = 0.0;
     m_axisX->setRange(fMin - pad, fMax + pad);
 
     if (m_data.isEmpty()) return;
@@ -756,7 +810,7 @@ void PlotWidget::addSeries(const QVector<double> &xData, const QVector<double> &
                            const QColor &color, QValueAxis *yAxis) {
     // Scatter dots (raw data points)
     auto *dots = new QScatterSeries;
-    dots->setMarkerSize(6);
+    dots->setMarkerSize(5);
     dots->setColor(color);
     dots->setBorderColor(color);
     for (int i = 0; i < xData.size(); ++i)
@@ -859,7 +913,7 @@ void PlotWidget::plotRplusJX() {
     }
 
     double fMin = freq.first(), fMax = freq.last();
-    double pad = qMax(0.005, stepKHz() / 2000.0);
+    double pad = 0.0;
     m_axisXTop->setRange(fMin - pad, fMax + pad);
     m_axisXBot->setRange(fMin - pad, fMax + pad);
     m_axisYTop->setRange(qMax(0.0, rMin-10), rMax+10);
@@ -882,7 +936,7 @@ void PlotWidget::plotZPhase() {
     }
 
     double fMin = freq.first(), fMax = freq.last();
-    double pad = qMax(0.005, stepKHz() / 2000.0);
+    double pad = 0.0;
     m_axisXTop->setRange(fMin - pad, fMax + pad);
     m_axisXBot->setRange(fMin - pad, fMax + pad);
     m_axisYTop->setRange(qMax(0.0, zMin-10), zMax+10);

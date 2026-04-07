@@ -113,12 +113,25 @@ void SweepEngine::nextStep() {
 void SweepEngine::pttOn() {
     if (m_stopRequested) { nextStep(); return; }
 
-    // Step 3: Key PTT
-    emit logMessage("  PTT ON");
-    if (!m_rig->setPTT(true)) {
-        emit sweepError("Failed to key PTT: " + m_rig->errorString());
-        m_running = false;
-        return;
+    bool isCW = (m_params.txMode == "CW" || m_params.txMode == "CWR");
+
+    if (isCW) {
+        // CW mode: PTT alone doesn't produce RF — send continuous dashes
+        // to key the transmitter. Each dash is ~3 dit-lengths of carrier.
+        emit logMessage("  Sending CW carrier (morse dashes)");
+        if (!m_rig->sendMorse("TTTTTTTTTTTTTTTTTTTT")) {
+            emit logMessage("WARNING: sendMorse failed: " + m_rig->errorString());
+            // Fall back to PTT in case rig handles it differently
+            m_rig->setPTT(true);
+        }
+    } else {
+        // Phone/digital modes: PTT produces carrier directly
+        emit logMessage("  PTT ON");
+        if (!m_rig->setPTT(true)) {
+            emit sweepError("Failed to key PTT: " + m_rig->errorString());
+            m_running = false;
+            return;
+        }
     }
 
     // Step 4: Wait sample time for TX to stabilize and LP-100A to measure

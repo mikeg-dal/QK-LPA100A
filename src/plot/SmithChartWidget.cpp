@@ -50,24 +50,14 @@ void SmithChartWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    // Compute geometry from current widget size
+    // Compute geometry from current widget size (no internal title — combo provides it)
     int w = width();
     int h = height();
-    int titleHeight = 24;
-    int chartH = h - titleHeight;
-    m_center = QPointF(w / 2.0, titleHeight + chartH / 2.0);
-    m_radius = qMin(w, chartH) / 2.0 * 0.82; // 18% margin for labels
+    m_center = QPointF(w / 2.0, h / 2.0);
+    m_radius = qMin(w, h) / 2.0 * 0.82; // 18% margin for labels
 
     // Background
     p.fillRect(rect(), QColor(Style::Color::DarkBackground));
-
-    // Title
-    QFont titleFont(Style::Font::Family);
-    titleFont.setPixelSize(14);
-    titleFont.setBold(true);
-    p.setFont(titleFont);
-    p.setPen(QColor(Style::Color::TextWhite));
-    p.drawText(QRect(0, 0, w, titleHeight), Qt::AlignCenter, "Smith Chart");
 
     // Draw grid (clipped to unit circle)
     drawGrid(p);

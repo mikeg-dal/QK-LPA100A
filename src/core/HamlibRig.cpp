@@ -188,6 +188,13 @@ QString HamlibRig::getMode() {
     return QString::fromUtf8(rig_strrmode(mode));
 }
 
+bool HamlibRig::sendMorse(const QString &text) {
+    if (!m_rig) return false;
+    int ret = rig_send_morse(m_rig, RIG_VFO_CURR, text.toUtf8().constData());
+    if (ret != RIG_OK) { setError(ret, "send_morse"); return false; }
+    return true;
+}
+
 bool HamlibRig::setRFPower(double level) {
     if (!m_rig) return false;
     value_t val;

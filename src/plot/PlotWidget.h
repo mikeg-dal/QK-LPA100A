@@ -28,7 +28,7 @@ public:
         RplusJX, ZPhase, SwrMode, ReturnLoss, ReflCoeff, SmithChart
     };
 
-    void setRig(HamlibRig *rig) { m_rig = rig; }
+    void setRig(HamlibRig *rig);
     void setLP100A(LP100AProtocol *lp100a);
 
     SweepData &sweepData() { return m_data; }
@@ -81,7 +81,6 @@ private:
 
     // Dual chart container (Z/Phase, R+jX) — two charts stacked vertically
     QWidget *m_dualChartWidget;
-    QLabel *m_dualTitle;
     QChartView *m_chartViewTop;
     QChartView *m_chartViewBot;
     QChart *m_chartTop;

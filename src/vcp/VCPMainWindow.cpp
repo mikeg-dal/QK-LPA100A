@@ -271,7 +271,7 @@ void VCPMainWindow::openPlotWindow() {
     plotWidget->setLP100A(m_protocol);
     plotWidget->setWindowTitle("QK-LP100A — Plot");
     plotWidget->setAttribute(Qt::WA_DeleteOnClose);
-    plotWidget->resize(500, 550);
+    plotWidget->resize(700, 600);
     plotWidget->setStyleSheet(
         QString("background: %1;").arg(Style::Color::Background));
 
