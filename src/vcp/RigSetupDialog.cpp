@@ -80,7 +80,10 @@ RigSetupDialog::RigSetupDialog(QWidget *parent)
     m_sampleTimeCombo->addItem("300 ms", 300);
     m_sampleTimeCombo->addItem("500 ms", 500);
     m_sampleTimeCombo->addItem("1 sec", 1000);
-    m_sampleTimeCombo->setCurrentIndex(2);
+    m_sampleTimeCombo->addItem("2 sec", 2000);
+    m_sampleTimeCombo->addItem("3 sec", 3000);
+    m_sampleTimeCombo->addItem("5 sec", 5000);
+    m_sampleTimeCombo->setCurrentIndex(4); // Default 1 sec per LP-100A manual
 
     sweepLayout->addRow("TX Mode:", m_txModeCombo);
     sweepLayout->addRow("RF Power:", m_powerSpin);
@@ -143,7 +146,7 @@ void RigSetupDialog::loadFromSettings() {
     int baud = s.value("rig/baudRate", 115200).toInt();
     QString txMode = s.value("rig/txMode", "CW").toString();
     double power = s.value("rig/rfPower", 0.10).toDouble();
-    int sampleMs = s.value("rig/sampleTimeMs", 300).toInt();
+    int sampleMs = s.value("rig/sampleTimeMs", 1000).toInt();
 
     for (int i = 0; i < m_rigCombo->count(); ++i) {
         if (m_rigCombo->itemData(i).toInt() == rigId) {
