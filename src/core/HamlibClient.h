@@ -27,6 +27,17 @@ public:
 
     static constexpr quint16 DefaultPort = 4532;
 
+    // Rig model info (parsed from rigctld --list)
+    struct RigInfo {
+        int modelId;
+        QString manufacturer;
+        QString model;
+        QString status; // "Stable", "Beta", etc.
+    };
+
+    // Parse the rig list from rigctld --list output (runs rigctld synchronously)
+    static QList<RigInfo> availableRigs();
+
 signals:
     void connected();
     void disconnected();

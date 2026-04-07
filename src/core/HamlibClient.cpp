@@ -1,4 +1,6 @@
 #include "core/HamlibClient.h"
+#include <QProcess>
+#include <QRegularExpression>
 
 HamlibClient::HamlibClient(QObject *parent)
     : QObject(parent)
@@ -125,4 +127,42 @@ void HamlibClient::processResponse(const QByteArray &line) {
 
 void HamlibClient::onSocketError(QAbstractSocket::SocketError) {
     emit errorOccurred(m_socket.errorString());
+}
+
+QList<HamlibClient::RigInfo> HamlibClient::availableRigs() {
+    QList<RigInfo> rigs;
+
+    QProcess proc;
+    proc.start("rigctld", {"--list"});
+    if (!proc.waitForFinished(5000))
+        return rigs;
+
+    // Output format (fixed-width columns):
+    // Rig #  Mfg                    Model                   Version         Status      Macro
+    //  2047  Elecraft               K4                      20250515.32     Stable      RIG_MODEL_K4
+    // Columns: 0-5=id, 6-29=mfg, 30-53=model, 54-69=version, 70-81=status
+
+    const QString output = QString::fromUtf8(proc.readAllStandardOutput());
+    const QStringList lines = output.split('\n');
+
+    for (const QString &line : lines) {
+        // Skip header, init messages, empty lines
+        if (line.length() < 70) continue;
+        if (line.trimmed().startsWith("Rig #")) continue;
+        if (line.trimmed().startsWith("init")) continue;
+
+        bool ok;
+        int id = line.left(6).trimmed().toInt(&ok);
+        if (!ok || id < 1) continue;
+
+        QString mfg   = line.mid(6, 23).trimmed();
+        QString model  = line.mid(30, 24).trimmed();
+        QString status = line.mid(70, 12).trimmed();
+
+        if (mfg.isEmpty() && model.isEmpty()) continue;
+
+        rigs.append({id, mfg, model, status});
+    }
+
+    return rigs;
 }

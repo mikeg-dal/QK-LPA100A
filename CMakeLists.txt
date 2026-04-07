@@ -20,7 +20,7 @@ set(CORE_SOURCES
     src/core/LP100AProtocol.cpp
     src/core/SerialTransport.cpp
     src/core/TcpTransport.cpp
-    src/core/HamlibClient.cpp
+    src/core/HamlibRig.cpp
 )
 
 set(CORE_HEADERS
@@ -28,7 +28,7 @@ set(CORE_HEADERS
     src/core/LP100AProtocol.h
     src/core/SerialTransport.h
     src/core/TcpTransport.h
-    src/core/HamlibClient.h
+    src/core/HamlibRig.h
 )
 
 set(VCP_SOURCES
@@ -36,6 +36,7 @@ set(VCP_SOURCES
     src/vcp/PowerGauge.cpp
     src/vcp/SWRGauge.cpp
     src/vcp/ConnectionDialog.cpp
+    src/vcp/RigSetupDialog.cpp
 )
 
 set(VCP_HEADERS
@@ -43,6 +44,7 @@ set(VCP_HEADERS
     src/vcp/PowerGauge.h
     src/vcp/SWRGauge.h
     src/vcp/ConnectionDialog.h
+    src/vcp/RigSetupDialog.h
 )
 
 set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/src/resources/icons/AppIcon.icns")
@@ -58,9 +60,10 @@ qt_add_executable(QK-LP100A MACOSX_BUNDLE
     ${APP_ICON_MACOS}
 )
 
-target_include_directories(QK-LP100A PRIVATE src)
+target_include_directories(QK-LP100A PRIVATE src /opt/homebrew/include)
 target_link_libraries(QK-LP100A PRIVATE
     Qt6::Widgets
     Qt6::SerialPort
     Qt6::Network
+    /opt/homebrew/lib/libhamlib.dylib
 )
