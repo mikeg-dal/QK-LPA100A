@@ -2,3 +2,5 @@ build/
 .DS_Store
 *.user
 CMakeUserPresets.json
+CLAUDE.md
+.claude/
