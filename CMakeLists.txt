@@ -53,12 +53,14 @@ set(PLOT_SOURCES
     src/plot/PlotWidget.cpp
     src/plot/SweepData.cpp
     src/plot/SweepEngine.cpp
+    src/plot/SmithChartWidget.cpp
 )
 
 set(PLOT_HEADERS
     src/plot/PlotWidget.h
     src/plot/SweepData.h
     src/plot/SweepEngine.h
+    src/plot/SmithChartWidget.h
 )
 
 set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/src/resources/icons/AppIcon.icns")

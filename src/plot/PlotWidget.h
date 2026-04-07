@@ -13,7 +13,9 @@
 #include <QtCharts/QScatterSeries>
 #include "plot/SweepData.h"
 
+class QStackedWidget;
 class SweepEngine;
+class SmithChartWidget;
 class HamlibRig;
 class LP100AProtocol;
 
@@ -61,7 +63,9 @@ private:
     void plotReturnLoss();
     void plotReflCoeff();
 
-    // Chart
+    // Chart (QStackedWidget swaps between QtCharts and Smith Chart)
+    QStackedWidget *m_chartStack;
+    SmithChartWidget *m_smithChart;
     QChartView *m_chartView;
     QChart *m_chart;
     QValueAxis *m_axisX;

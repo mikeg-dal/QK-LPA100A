@@ -1,9 +1,11 @@
 #include "plot/PlotWidget.h"
 #include "plot/SweepEngine.h"
+#include "plot/SmithChartWidget.h"
 #include "core/HamlibRig.h"
 #include "core/LP100AProtocol.h"
 #include "core/SerialTransport.h"
 #include "Style.h"
+#include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -21,7 +23,11 @@ PlotWidget::PlotWidget(QWidget *parent)
     mainLayout->setContentsMargins(8, 4, 8, 4);
 
     createChart();
-    mainLayout->addWidget(m_chartView, 1);
+    m_smithChart = new SmithChartWidget;
+    m_chartStack = new QStackedWidget;
+    m_chartStack->addWidget(m_chartView);  // Page 0: QtCharts
+    m_chartStack->addWidget(m_smithChart); // Page 1: Smith Chart
+    mainLayout->addWidget(m_chartStack, 1);
 
     createControls();
 
@@ -463,6 +469,14 @@ void PlotWidget::updateReadout(const SweepPoint &pt) {
 }
 
 void PlotWidget::updateChart() {
+    // Switch between QtCharts and Smith Chart widget
+    if (m_displayMode == SmithChart) {
+        m_chartStack->setCurrentIndex(1);
+        m_smithChart->setData(&m_data);
+        return;
+    }
+    m_chartStack->setCurrentIndex(0);
+
     m_chart->removeAllSeries();
     m_chart->legend()->hide();
     m_axisY2->setVisible(false);
@@ -490,7 +504,7 @@ void PlotWidget::updateChart() {
             m_chart->setTitle("Reflection Coefficient");
             m_axisY1->setTitleText("|Γ|"); m_axisY1->setRange(0, 1.0); break;
         case SmithChart:
-            m_chart->setTitle("Smith Chart"); break;
+            break; // Handled above
     }
 
     double fMin = m_startFreq->value();
