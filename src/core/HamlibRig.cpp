@@ -36,7 +36,6 @@ static int rigListCallback(const rig_caps *caps, void *data) {
 HamlibRig::HamlibRig(QObject *parent)
     : QObject(parent)
 {
-    rig_set_debug(RIG_DEBUG_NONE); // Suppress Hamlib debug output
 }
 
 HamlibRig::~HamlibRig() {
@@ -45,7 +44,6 @@ HamlibRig::~HamlibRig() {
 
 QList<HamlibRig::RigInfo> HamlibRig::availableRigs() {
     QList<RigInfo> rigs;
-    rig_set_debug(RIG_DEBUG_NONE);
     rig_load_all_backends();
     rig_list_foreach(rigListCallback, &rigs);
 
@@ -78,7 +76,6 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
         }
     }
 
-    rig_set_debug(RIG_DEBUG_NONE);
     m_rig = rig_init(modelId);
     if (!m_rig) {
         m_errorString = QString("Failed to init rig model %1").arg(modelId);
@@ -97,7 +94,6 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
         m_rig->state.rigport.parm.serial.rate = baudRate;
     }
 
-    rig_set_debug(RIG_DEBUG_NONE);
     int ret = rig_open(m_rig);
 
     // If first attempt fails on TCP, wait and retry once
@@ -105,7 +101,6 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
         rig_cleanup(m_rig);
         QThread::msleep(1000);
 
-        rig_set_debug(RIG_DEBUG_NONE);
         m_rig = rig_init(modelId);
         if (m_rig) {
             strncpy(m_rig->state.rigport.pathname, port.toUtf8().constData(),
@@ -113,7 +108,6 @@ bool HamlibRig::open(int modelId, const QString &port, int baudRate) {
             m_rig->state.rigport.type.rig = RIG_PORT_NETWORK;
             if (baudRate > 0)
                 m_rig->state.rigport.parm.serial.rate = baudRate;
-            rig_set_debug(RIG_DEBUG_NONE);
             ret = rig_open(m_rig);
         }
     }

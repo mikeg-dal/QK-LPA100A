@@ -70,8 +70,9 @@ namespace Font {
     constexpr int Small      = 8;    // Status bar, secondary text
     constexpr int Normal     = 9;    // Field labels (Z:, R:, etc.)
     constexpr int Medium     = 10;   // Meter labels, impedance values, compact buttons
-    constexpr int Large      = 12;   // Gauge inline readout
-    constexpr int Callsign   = 16;   // Callsign banner
+    constexpr int Large        = 12;   // Gauge inline readout
+    constexpr int DisplayTitle = 14;   // Plot display mode combo title
+    constexpr int Callsign     = 16;   // Callsign banner
 }
 
 // =============================================================================
@@ -121,6 +122,14 @@ namespace Layout {
     // Connection dialog
     constexpr int DialogMinWidth  = 380;
     constexpr int DialogSpacing   = 8;
+
+    // Window default sizes
+    constexpr int VCPCompactW     = 350;
+    constexpr int VCPCompactH     = 170;
+    constexpr int VCPStandardW    = 400;
+    constexpr int VCPStandardH    = 200;
+    constexpr int PlotDefaultW    = 700;
+    constexpr int PlotDefaultH    = 600;
 }
 
 // =============================================================================

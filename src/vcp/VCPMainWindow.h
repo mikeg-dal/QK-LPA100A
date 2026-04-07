@@ -3,8 +3,6 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QPushButton>
-#include <QSettings>
-#include <QFile>
 #include "core/ITransport.h"
 #include "core/LP100AProtocol.h"
 #include "core/HamlibRig.h"
@@ -12,6 +10,7 @@
 #include "vcp/SWRGauge.h"
 
 class QAction;
+class QFile;
 
 class VCPMainWindow : public QMainWindow {
     Q_OBJECT

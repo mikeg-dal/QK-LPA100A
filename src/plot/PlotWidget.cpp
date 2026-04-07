@@ -345,6 +345,10 @@ PlotWidget::PlotWidget(QWidget *parent)
 }
 
 void PlotWidget::closeEvent(QCloseEvent *event) {
+    // Stop any active sweep to prevent singleShot callbacks firing after destruction
+    if (m_sweepEngine && m_sweepEngine->isRunning()) {
+        m_sweepEngine->stop();
+    }
     saveSettings();
     QWidget::closeEvent(event);
 }
@@ -452,7 +456,7 @@ void PlotWidget::createControls() {
     m_displayCombo->addItem("Smith Chart", SmithChart);
     m_displayCombo->setCurrentIndex(2);
     QFont comboFont(Style::Font::Family);
-    comboFont.setPixelSize(14);
+    comboFont.setPixelSize(Style::Font::DisplayTitle);
     comboFont.setBold(true);
     m_displayCombo->setFont(comboFont);
 

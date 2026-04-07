@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     pal.setColor(QPalette::ToolTipBase,     QColor(Style::Color::Surface));
     pal.setColor(QPalette::ToolTipText,     QColor(Style::Color::TextWhite));
     pal.setColor(QPalette::Text,            QColor(Style::Color::TextWhite));
-    pal.setColor(QPalette::Button,          QColor("#3a3a3a"));
+    pal.setColor(QPalette::Button,          QColor(Style::Color::GradientMid1));
     pal.setColor(QPalette::ButtonText,      QColor(Style::Color::TextWhite));
     pal.setColor(QPalette::BrightText,      QColor(Style::Color::StatusRed));
     pal.setColor(QPalette::Link,            QColor(Style::Color::AccentCyan));

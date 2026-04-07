@@ -18,12 +18,15 @@
 #include <QDir>
 #include <QTextStream>
 #include <QDateTime>
+#include <QSettings>
+#include <QFile>
+#include <QAction>
 
 VCPMainWindow::VCPMainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("QK-LP100A");
-    resize(350, 170); // Default compact size; applyViewStyle() will adjust
+    resize(Style::Layout::VCPCompactW, Style::Layout::VCPCompactH);
 
     m_hamlib = new HamlibRig(this);
     connect(m_hamlib, &HamlibRig::errorOccurred, this, [this](const QString &err) {
@@ -271,7 +274,7 @@ void VCPMainWindow::openPlotWindow() {
     plotWidget->setLP100A(m_protocol);
     plotWidget->setWindowTitle("QK-LP100A — Plot");
     plotWidget->setAttribute(Qt::WA_DeleteOnClose);
-    plotWidget->resize(700, 600);
+    plotWidget->resize(Style::Layout::PlotDefaultW, Style::Layout::PlotDefaultH);
     plotWidget->setStyleSheet(
         QString("background: %1;").arg(Style::Color::Background));
 
@@ -324,12 +327,9 @@ void VCPMainWindow::applyViewStyle() {
     centralWidget()->adjustSize();
 
     switch (m_viewStyle) {
-        case Compact:  setFixedSize(350, 170); break;
-        case Standard: setFixedSize(400, 200); break;
+        case Compact:  setFixedSize(Style::Layout::VCPCompactW, Style::Layout::VCPCompactH); break;
+        case Standard: setFixedSize(Style::Layout::VCPStandardW, Style::Layout::VCPStandardH); break;
         case Full:
-            // Allow resizing in Full mode
-            setMinimumSize(0, 0);
-            setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
             resize(sizeHint());
             break;
     }
@@ -363,13 +363,13 @@ void VCPMainWindow::showConnectionDialog() {
             m_debugFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
             debugLog("=== Debug logging started ===");
             debugLog("Log file: " + logPath);
-        SWRGauge::setDebugEnabled(m_debugLogging);
         } else if (!m_debugLogging && m_debugFile) {
             debugLog("=== Debug logging stopped ===");
             m_debugFile->close();
-            delete m_debugFile;
+            m_debugFile->deleteLater();
             m_debugFile = nullptr;
         }
+        SWRGauge::setDebugEnabled(m_debugLogging);
         saveSettings();
         connectToDevice();
     }
@@ -485,9 +485,8 @@ void VCPMainWindow::onDataUpdated(const LP100AData &data) {
     }
 
     m_lastReportedPower = data.power;
-    bool tuneMode = (data.peakHoldMode == 2);
     m_swrGauge->setPowerPresent(swrValid);
-    m_swrGauge->setTuneMode(tuneMode);
+    m_swrGauge->setTuneMode(isTuneMode);
     m_swrGauge->setPeakMode(isPeakMode);
     m_swrGauge->setValue(data.swr);
     m_swrGauge->setAlarmPoint(data.alarmSWR());
