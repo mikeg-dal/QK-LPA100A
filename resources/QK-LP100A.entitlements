@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Network access for TCP connection to LP-100A and Hamlib rig control -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Serial port access for LP-100A USB connection -->
+    <key>com.apple.security.device.serial</key>
+    <true/>
+</dict>
+</plist>

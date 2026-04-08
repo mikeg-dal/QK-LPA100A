@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(QK-LP100A VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "Minimum macOS version" FORCE)
+# Full version string can include prerelease info (e.g., "0.1.0-alpha.1")
+# CI sets this via -DQKLP100A_VERSION_FULL="x.y.z-prerelease"
+# If not set, defaults to PROJECT_VERSION
+if(NOT DEFINED QKLP100A_VERSION_FULL)
+    set(QKLP100A_VERSION_FULL "${PROJECT_VERSION}")
+endif()
+message(STATUS "QK-LP100A version: ${QKLP100A_VERSION_FULL}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,8 +18,8 @@ set(CMAKE_AUTOUIC ON)
 # macOS app bundle
 set(MACOSX_BUNDLE_BUNDLE_NAME "QK-LP100A")
 set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.ai5qk.qk-lp100a")
-set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
-set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+set(MACOSX_BUNDLE_BUNDLE_VERSION ${QKLP100A_VERSION_FULL})
+set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QKLP100A_VERSION_FULL})
 set(MACOSX_BUNDLE_ICON_FILE "AppIcon.icns")
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort Network Charts)
@@ -93,4 +99,8 @@ target_link_libraries(QK-LP100A PRIVATE
     Qt6::Network
     Qt6::Charts
     /opt/homebrew/lib/libhamlib.dylib
+)
+
+target_compile_definitions(QK-LP100A PRIVATE
+    QKLP100A_VERSION="${QKLP100A_VERSION_FULL}"
 )

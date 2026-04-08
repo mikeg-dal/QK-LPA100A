@@ -1,0 +1,184 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Homebrew downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew/downloads
+            ~/Library/Caches/Homebrew/api
+          key: brew-macos-${{ hashFiles('.github/workflows/build-macos.yml') }}
+          restore-keys: brew-macos-
+
+      - name: Install dependencies
+        run: brew install qt hamlib openssl@3 dbus brotli
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Verify executable
+        run: test -f build/QK-LP100A.app/Contents/MacOS/QK-LP100A
+
+      - name: Bundle dependencies
+        run: |
+          set -e
+
+          APP_BUNDLE="build/QK-LP100A.app"
+          FRAMEWORKS="$APP_BUNDLE/Contents/Frameworks"
+
+          # Run macdeployqt to bundle Qt frameworks
+          $(brew --prefix qt)/bin/macdeployqt "$APP_BUNDLE" -verbose=2
+
+          # Copy Hamlib library
+          echo "=== Copying Hamlib library ==="
+          HAMLIB_LIB="$(brew --prefix hamlib)/lib"
+          HAMLIB_DYLIB=$(ls "$HAMLIB_LIB"/libhamlib.*.dylib | grep -v '.a$' | head -1)
+          HAMLIB_BASENAME=$(basename "$HAMLIB_DYLIB")
+          cp "$HAMLIB_DYLIB" "$FRAMEWORKS/"
+          ln -sf "$HAMLIB_BASENAME" "$FRAMEWORKS/libhamlib.dylib"
+
+          # Copy QtDBus.framework (transitive dependency of QtGui in Homebrew Qt)
+          echo "=== Copying QtDBus.framework ==="
+          QTBASE_LIB="$(brew --prefix qtbase)/lib"
+          cp -R "$QTBASE_LIB/QtDBus.framework" "$FRAMEWORKS/"
+
+          # Copy libdbus (dependency of QtDBus)
+          echo "=== Copying libdbus ==="
+          DBUS_LIB="$(brew --prefix dbus)/lib"
+          cp "$DBUS_LIB/libdbus-1.3.dylib" "$FRAMEWORKS/"
+          ln -sf libdbus-1.3.dylib "$FRAMEWORKS/libdbus-1.dylib"
+
+          # Copy brotli libraries (dependency of QtNetwork)
+          echo "=== Copying brotli libraries ==="
+          BROTLI_LIB="$(brew --prefix brotli)/lib"
+          cp "$BROTLI_LIB/libbrotlicommon.1.dylib" "$FRAMEWORKS/"
+          cp "$BROTLI_LIB/libbrotlidec.1.dylib" "$FRAMEWORKS/"
+          cp "$BROTLI_LIB/libbrotlienc.1.dylib" "$FRAMEWORKS/"
+          ln -sf libbrotlicommon.1.dylib "$FRAMEWORKS/libbrotlicommon.dylib"
+          ln -sf libbrotlidec.1.dylib "$FRAMEWORKS/libbrotlidec.dylib"
+          ln -sf libbrotlienc.1.dylib "$FRAMEWORKS/libbrotlienc.dylib"
+
+          # Copy OpenSSL libraries
+          echo "=== Copying OpenSSL libraries ==="
+          OPENSSL_LIB="$(brew --prefix openssl@3)/lib"
+          OPENSSL_REAL="$(realpath $OPENSSL_LIB)"
+          cp "$OPENSSL_LIB/libssl.3.dylib" "$FRAMEWORKS/"
+          cp "$OPENSSL_LIB/libcrypto.3.dylib" "$FRAMEWORKS/"
+
+          # Fix permissions (Homebrew files may be read-only)
+          chmod -R u+rw "$FRAMEWORKS/"
+
+          # Fix Hamlib library path
+          echo "=== Fixing Hamlib paths ==="
+          install_name_tool -id "@executable_path/../Frameworks/$HAMLIB_BASENAME" \
+            "$FRAMEWORKS/$HAMLIB_BASENAME" || true
+
+          # Fix the main binary's reference to Hamlib
+          HAMLIB_ORIG=$(otool -L "$APP_BUNDLE/Contents/MacOS/QK-LP100A" | grep hamlib | awk '{print $1}')
+          if [ -n "$HAMLIB_ORIG" ]; then
+            install_name_tool -change "$HAMLIB_ORIG" \
+              "@executable_path/../Frameworks/$HAMLIB_BASENAME" \
+              "$APP_BUNDLE/Contents/MacOS/QK-LP100A"
+          fi
+
+          # Fix OpenSSL library paths
+          echo "=== Fixing OpenSSL paths ==="
+          install_name_tool -id "@executable_path/../Frameworks/libssl.3.dylib" \
+            "$FRAMEWORKS/libssl.3.dylib"
+          install_name_tool -id "@executable_path/../Frameworks/libcrypto.3.dylib" \
+            "$FRAMEWORKS/libcrypto.3.dylib"
+          install_name_tool -change "$OPENSSL_REAL/libcrypto.3.dylib" \
+            "@executable_path/../Frameworks/libcrypto.3.dylib" \
+            "$FRAMEWORKS/libssl.3.dylib"
+
+          # Fix libdbus library path
+          echo "=== Fixing libdbus paths ==="
+          install_name_tool -id "@executable_path/../Frameworks/libdbus-1.3.dylib" \
+            "$FRAMEWORKS/libdbus-1.3.dylib" || true
+
+          # Fix brotli library paths
+          echo "=== Fixing brotli paths ==="
+          install_name_tool -id "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
+            "$FRAMEWORKS/libbrotlicommon.1.dylib" || true
+          install_name_tool -id "@executable_path/../Frameworks/libbrotlidec.1.dylib" \
+            "$FRAMEWORKS/libbrotlidec.1.dylib" || true
+          install_name_tool -id "@executable_path/../Frameworks/libbrotlienc.1.dylib" \
+            "$FRAMEWORKS/libbrotlienc.1.dylib" || true
+
+          # Fix brotlidec's reference to brotlicommon
+          BROTLI_COMMON_ORIG=$(otool -L "$FRAMEWORKS/libbrotlidec.1.dylib" | grep brotlicommon | awk '{print $1}')
+          if [ -n "$BROTLI_COMMON_ORIG" ]; then
+            install_name_tool -change "$BROTLI_COMMON_ORIG" \
+              "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
+              "$FRAMEWORKS/libbrotlidec.1.dylib"
+          fi
+
+          # Fix brotlienc's reference to brotlicommon
+          BROTLI_COMMON_ORIG=$(otool -L "$FRAMEWORKS/libbrotlienc.1.dylib" | grep brotlicommon | awk '{print $1}')
+          if [ -n "$BROTLI_COMMON_ORIG" ]; then
+            install_name_tool -change "$BROTLI_COMMON_ORIG" \
+              "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
+              "$FRAMEWORKS/libbrotlienc.1.dylib"
+          fi
+
+          # Fix QtDBus.framework paths
+          echo "=== Fixing QtDBus.framework paths ==="
+          QTDBUS_BINARY="$FRAMEWORKS/QtDBus.framework/Versions/A/QtDBus"
+          if [ -f "$QTDBUS_BINARY" ]; then
+            install_name_tool -id "@executable_path/../Frameworks/QtDBus.framework/Versions/A/QtDBus" \
+              "$QTDBUS_BINARY"
+
+            # Update QtDBus's reference to libdbus
+            DBUS_ORIG=$(otool -L "$QTDBUS_BINARY" | grep libdbus | awk '{print $1}')
+            if [ -n "$DBUS_ORIG" ]; then
+              install_name_tool -change "$DBUS_ORIG" \
+                "@executable_path/../Frameworks/libdbus-1.3.dylib" \
+                "$QTDBUS_BINARY"
+            fi
+
+            # Update QtGui's reference to QtDBus
+            QTGUI_BINARY="$FRAMEWORKS/QtGui.framework/Versions/A/QtGui"
+            if [ -f "$QTGUI_BINARY" ]; then
+              QTDBUS_ORIG=$(otool -L "$QTGUI_BINARY" | grep QtDBus | awk '{print $1}')
+              if [ -n "$QTDBUS_ORIG" ]; then
+                install_name_tool -change "$QTDBUS_ORIG" \
+                  "@executable_path/../Frameworks/QtDBus.framework/Versions/A/QtDBus" \
+                  "$QTGUI_BINARY"
+              fi
+            fi
+          else
+            echo "ERROR: QtDBus binary not found at $QTDBUS_BINARY"
+            exit 1
+          fi
+
+          echo "=== Frameworks contents ==="
+          ls -la "$FRAMEWORKS/" | head -30
+
+          echo "=== Verify no broken references ==="
+          otool -L "$APP_BUNDLE/Contents/MacOS/QK-LP100A" | grep -v '@' | grep -v '/usr/lib' | grep -v '/System' || echo "All references OK"

@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("QK-LP100A");
     app.setOrganizationName("AI5QK");
-    app.setApplicationVersion("0.1.0");
+    app.setApplicationVersion(QKLP100A_VERSION);
 
     // Warm the macOS network stack early
     prewarmNetwork();
