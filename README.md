@@ -28,6 +28,19 @@ One download. Drag to Applications. Launch. Qt, Hamlib, libusb, OpenSSL and ever
 
 Switch layouts anytime from the View menu.
 
+## Plot Mode — Antenna Sweeps
+
+Drive any Hamlib-supported rig across a frequency range and chart SWR, power, and impedance in real time.
+
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="resources/screenshots/plot-swr.png" alt="SWR vs frequency sweep" width="100%"><br><sub><b>SWR vs Frequency</b> &mdash; auto-scaled plot with sign-corrected values</sub></td>
+    <td align="center" width="50%"><img src="resources/screenshots/plot-smith.png" alt="Smith chart view" width="100%"><br><sub><b>Smith Chart</b> &mdash; impedance locus with labeled frequency points</sub></td>
+  </tr>
+</table>
+
+Export the trace as CSV or PNG with one click.
+
 ## Requirements
 
 - macOS 26 (Tahoe) or later
