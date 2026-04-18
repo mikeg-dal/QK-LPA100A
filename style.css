@@ -412,6 +412,19 @@ footer {
   align-items: start;
 }
 
+.plot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  align-items: start;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.plot-section {
+  margin-top: 0.5rem;
+}
+
 .shot {
   background: #1a1d27;
   border: 1px solid #2a2d37;
@@ -445,6 +458,10 @@ footer {
 /* Responsive */
 @media (max-width: 800px) {
   .shot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plot-grid {
     grid-template-columns: 1fr;
   }
 }
