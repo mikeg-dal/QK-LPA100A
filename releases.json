@@ -1,14 +1,14 @@
 {
   "tag": "v0.1.0-alpha.2",
   "version": "0.1.0-alpha.2",
-  "date": "2026-04-08",
+  "date": "2026-04-18",
   "prerelease": true,
   "assets": {
     "macos": {
       "name": "QK-LP100A-0.1.0-alpha.2-macos.dmg",
       "url": "./downloads/v0.1.0-alpha.2/QK-LP100A-0.1.0-alpha.2-macos.dmg",
       "size": "43M",
-      "sha256": "32e9550501fae33e97d6c636ddfef5bbf952e3b3e89ad43e72c5dd77bac499d3"
+      "sha256": "3e4654e0dc98a8bc7694b347b42a996a26790f58f3569e144a9614c71e60ab6b"
     }
   }
 }
