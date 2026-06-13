@@ -221,9 +221,10 @@ void VCPMainWindow::createUI() {
 void VCPMainWindow::createMenus() {
     // File menu
     auto *fileMenu = menuBar()->addMenu("File");
-    m_connectAction = fileMenu->addAction("LP-100A Connect...", this, &VCPMainWindow::showConnectionDialog);
+    m_connectAction = fileMenu->addAction("LP-100A Connect", this, &VCPMainWindow::connectFromMenu);
     m_disconnectAction = fileMenu->addAction("LP-100A Disconnect", this, &VCPMainWindow::disconnectFromDevice);
     m_disconnectAction->setEnabled(false);
+    m_settingsAction = fileMenu->addAction("Settings...", this, &VCPMainWindow::showSettingsDialog);
     fileMenu->addSeparator();
     fileMenu->addAction("Open Plot Window", this, &VCPMainWindow::openPlotWindow);
     fileMenu->addSeparator();
@@ -337,41 +338,74 @@ void VCPMainWindow::applyViewStyle() {
 
 // --- LP-100A connection ---
 
-void VCPMainWindow::showConnectionDialog() {
+void VCPMainWindow::connectFromMenu() {
+    // Connect directly using saved settings — no dialog. If nothing is
+    // configured yet (no serial port chosen for a serial connection), fall
+    // back to opening Settings first.
+    if (!m_useTcp && m_serialPort.isEmpty()) {
+        showSettingsDialog();
+        return;
+    }
+    connectToDevice();
+}
+
+void VCPMainWindow::showSettingsDialog() {
     ConnectionDialog dlg(this);
+    dlg.setConnectionType(m_useTcp ? ConnectionDialog::TCP : ConnectionDialog::Serial);
     dlg.setSerialPort(m_serialPort);
     dlg.setTcpHost(m_tcpHost);
     dlg.setTcpPort(m_tcpPort);
     dlg.setPollInterval(m_pollInterval);
 
-    if (dlg.exec() == QDialog::Accepted) {
-        m_useTcp = (dlg.connectionType() == ConnectionDialog::TCP);
-        m_serialPort = dlg.serialPort();
-        m_tcpHost = dlg.tcpHost();
-        m_tcpPort = dlg.tcpPort();
-        m_pollInterval = dlg.pollIntervalMs();
+    if (dlg.exec() != QDialog::Accepted)
+        return;
 
-        // Debug logging
-        m_debugLogging = dlg.debugLogging();
-        QSettings ds("AI5QK", "QK-LP100A");
-        ds.setValue("debug/enabled", m_debugLogging);
-        if (m_debugLogging && !m_debugFile) {
-            QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                              + "/debug.log";
-            QDir().mkpath(QFileInfo(logPath).absolutePath());
-            m_debugFile = new QFile(logPath, this);
-            m_debugFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
-            debugLog("=== Debug logging started ===");
-            debugLog("Log file: " + logPath);
-        } else if (!m_debugLogging && m_debugFile) {
-            debugLog("=== Debug logging stopped ===");
-            m_debugFile->close();
-            m_debugFile->deleteLater();
-            m_debugFile = nullptr;
-        }
-        SWRGauge::setDebugEnabled(m_debugLogging);
-        saveSettings();
-        connectToDevice();
+    // Capture the old endpoint so we only reconnect if it actually changed.
+    const bool    oldUseTcp = m_useTcp;
+    const QString oldSerial = m_serialPort;
+    const QString oldHost   = m_tcpHost;
+    const quint16 oldPort   = m_tcpPort;
+
+    m_useTcp = (dlg.connectionType() == ConnectionDialog::TCP);
+    m_serialPort = dlg.serialPort();
+    m_tcpHost = dlg.tcpHost();
+    m_tcpPort = dlg.tcpPort();
+    m_pollInterval = dlg.pollIntervalMs();
+
+    // Debug logging
+    m_debugLogging = dlg.debugLogging();
+    QSettings ds("AI5QK", "QK-LP100A");
+    ds.setValue("debug/enabled", m_debugLogging);
+    if (m_debugLogging && !m_debugFile) {
+        QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                          + "/debug.log";
+        QDir().mkpath(QFileInfo(logPath).absolutePath());
+        m_debugFile = new QFile(logPath, this);
+        m_debugFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+        debugLog("=== Debug logging started ===");
+        debugLog("Log file: " + logPath);
+    } else if (!m_debugLogging && m_debugFile) {
+        debugLog("=== Debug logging stopped ===");
+        m_debugFile->close();
+        m_debugFile->deleteLater();
+        m_debugFile = nullptr;
+    }
+    SWRGauge::setDebugEnabled(m_debugLogging);
+    saveSettings();
+
+    // Apply changes. If not connected, settings just take effect on next Connect.
+    const bool connected = m_transport && m_transport->isOpen();
+    if (!connected)
+        return;
+
+    const bool endpointChanged = (m_useTcp != oldUseTcp)
+        || (m_useTcp && (m_tcpHost != oldHost || m_tcpPort != oldPort))
+        || (!m_useTcp && m_serialPort != oldSerial);
+
+    if (endpointChanged) {
+        connectToDevice();  // Auto-reconnect to apply the new endpoint
+    } else if (m_protocol) {
+        m_protocol->setPollInterval(m_pollInterval);  // Live, no reconnect
     }
 }
 
@@ -408,6 +442,7 @@ void VCPMainWindow::connectToDevice() {
     connect(m_protocol, &LP100AProtocol::dataUpdated, this, &VCPMainWindow::onDataUpdated);
     connect(m_protocol, &LP100AProtocol::rawResponse, this, &VCPMainWindow::onRawResponse);
     connect(m_protocol, &LP100AProtocol::parseError, this, &VCPMainWindow::onParseError);
+    connect(m_protocol, &LP100AProtocol::responseTimedOut, this, &VCPMainWindow::onResponseTimedOut);
 
     // Update plot widget with the protocol reference
     if (auto *pw = qobject_cast<PlotWidget *>(m_plotWindow))
@@ -432,6 +467,7 @@ void VCPMainWindow::onConnectionChanged(bool connected) {
 void VCPMainWindow::updateConnectionUI(bool connected) {
     m_connectAction->setEnabled(!connected);
     m_disconnectAction->setEnabled(connected);
+    if (!connected) m_silent = false;
     if (connected) {
         QString text = m_useTcp ? QString("LP-100A: %1:%2").arg(m_tcpHost).arg(m_tcpPort)
                                 : QString("LP-100A: %1").arg(m_serialPort);
@@ -446,6 +482,12 @@ void VCPMainWindow::updateConnectionUI(bool connected) {
 // --- Data handling ---
 
 void VCPMainWindow::onDataUpdated(const LP100AData &data) {
+    // Device is responding again — restore the green connected status.
+    if (m_silent) {
+        m_silent = false;
+        updateConnectionUI(true);
+    }
+
     m_powerGauge->setValue(data.power);
     m_refGauge->setValue(data.reflectedPower());
     updatePowerRange(data.powerRange);
@@ -540,6 +582,16 @@ void VCPMainWindow::debugLog(const QString &msg) {
     out.flush();
 }
 void VCPMainWindow::onParseError(const QString &err) { m_statusLabel->setText("Parse error: " + err); }
+
+void VCPMainWindow::onResponseTimedOut() {
+    // Transport is connected but the LP-100A isn't answering polls — flag amber
+    // instead of leaving a misleading green "connected" status.
+    if (m_silent) return;  // Already flagged; don't restyle on every timeout
+    m_silent = true;
+    QString endpoint = m_useTcp ? QString("%1:%2").arg(m_tcpHost).arg(m_tcpPort) : m_serialPort;
+    m_statusLabel->setText(QString("LP-100A: %1 — no response").arg(endpoint));
+    m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusAmber));
+}
 
 void VCPMainWindow::onRangeClicked() {
     static constexpr double ranges[] = {

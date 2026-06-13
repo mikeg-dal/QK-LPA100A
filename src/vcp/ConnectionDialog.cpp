@@ -119,6 +119,15 @@ bool ConnectionDialog::debugLogging() const {
     return m_debugCheck->isChecked();
 }
 
+void ConnectionDialog::setConnectionType(ConnectionType type) {
+    // Checking one radio unchecks the other (autoExclusive), which fires the
+    // toggled() handler that enables/disables the serial vs TCP groups.
+    if (type == TCP)
+        m_tcpRadio->setChecked(true);
+    else
+        m_serialRadio->setChecked(true);
+}
+
 void ConnectionDialog::setSerialPort(const QString &port) {
     int idx = m_portCombo->findText(port);
     if (idx >= 0) m_portCombo->setCurrentIndex(idx);
