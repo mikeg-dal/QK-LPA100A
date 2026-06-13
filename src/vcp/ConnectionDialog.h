@@ -22,6 +22,7 @@ public:
     int pollIntervalMs() const;
     bool debugLogging() const;
 
+    void setConnectionType(ConnectionType type);
     void setSerialPort(const QString &port);
     void setTcpHost(const QString &host);
     void setTcpPort(quint16 port);

@@ -25,8 +25,10 @@ private slots:
     void onConnectionChanged(bool connected);
     void onRawResponse(const QString &resp);
     void onParseError(const QString &err);
+    void onResponseTimedOut();
 
-    void showConnectionDialog();
+    void showSettingsDialog();
+    void connectFromMenu();
     void connectToDevice();
     void disconnectFromDevice();
 
@@ -82,6 +84,7 @@ private:
     // Menu actions
     QAction *m_connectAction;
     QAction *m_disconnectAction;
+    QAction *m_settingsAction;
     QAction *m_compactAction;
     QAction *m_standardAction;
     QAction *m_fullAction;
@@ -97,6 +100,7 @@ private:
     int m_lastAlarmSetPoint = -1;
     bool m_lastAlarmTripped = false;
     double m_lastReportedPower = 0.0;
+    bool m_silent = false;  // True while connected but device not responding (amber status)
     bool m_debugLogging = false;
     QFile *m_debugFile = nullptr;
 };

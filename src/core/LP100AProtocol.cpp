@@ -73,56 +73,83 @@ LP100AProtocol::LP100AProtocol(ITransport *transport, QObject *parent)
             this, &LP100AProtocol::onDataReceived);
     connect(&m_pollTimer, &QTimer::timeout,
             this, &LP100AProtocol::onPollTimer);
+
+    m_responseTimeout.setSingleShot(true);
+    connect(&m_responseTimeout, &QTimer::timeout,
+            this, &LP100AProtocol::onResponseTimeout);
+
+    m_commandTimer.setSingleShot(true);
+    connect(&m_commandTimer, &QTimer::timeout,
+            this, &LP100AProtocol::onCommandSettle);
 }
 
 void LP100AProtocol::startPolling(int intervalMs) {
-    m_pollTimer.start(intervalMs);
+    m_pollIntervalMs = qBound(Style::Protocol::MinPollMs, intervalMs, Style::Protocol::MaxPollMs);
+    m_awaitingResponse = false;
+    m_commandQueue.clear();
+    m_buffer.clear();
+    m_pollTimer.start(m_pollIntervalMs);
     poll();
 }
 
 void LP100AProtocol::stopPolling() {
     m_pollTimer.stop();
+    m_responseTimeout.stop();
+    m_commandTimer.stop();
+    m_awaitingResponse = false;
+    m_commandQueue.clear();
 }
 
 bool LP100AProtocol::isPolling() const {
     return m_pollTimer.isActive();
 }
 
+void LP100AProtocol::setPollInterval(int intervalMs) {
+    m_pollIntervalMs = qBound(Style::Protocol::MinPollMs, intervalMs, Style::Protocol::MaxPollMs);
+    if (m_pollTimer.isActive())
+        m_pollTimer.setInterval(m_pollIntervalMs);
+}
+
+// Central write choke point: every outbound byte marks the line busy and arms
+// the watchdog, so commands and polls can never overlap a response in flight.
+void LP100AProtocol::writeToLine(const QByteArray &bytes) {
+    m_transport->write(bytes);
+    m_awaitingResponse = true;
+    m_responseTimeout.start(m_pollIntervalMs + Style::Protocol::ResponseTimeoutMarginMs);
+}
+
 void LP100AProtocol::poll() {
-    m_transport->write(QByteArray("P"));
+    writeToLine(QByteArray("P"));
 }
 
 void LP100AProtocol::incrementAlarm() {
-    // Pause polling to avoid command/response collision on serial
-    int interval = m_pollTimer.interval();
-    m_pollTimer.stop();
-    m_buffer.clear(); // Discard any partial response in flight
-
-    m_transport->write(QByteArray("A"));
-
-    // Resume polling after device processes the command
-    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, [this, interval]() {
-        poll();
-        m_pollTimer.start(interval);
-    });
+    enqueueCommand(QByteArray("A"));
 }
 
 void LP100AProtocol::togglePeakAvgTune() {
-    int interval = m_pollTimer.interval();
-    m_pollTimer.stop();
-    m_buffer.clear();
+    enqueueCommand(QByteArray("F"));
+}
 
-    m_transport->write(QByteArray("F"));
+void LP100AProtocol::enqueueCommand(const QByteArray &cmd) {
+    m_commandQueue.enqueue(cmd);
+    dispatchQueued();  // Send now if the line is already idle; else onDataReceived will retry
+}
 
-    QTimer::singleShot(Style::Protocol::CommandDelayMs, this, [this, interval]() {
-        poll();
-        m_pollTimer.start(interval);
-    });
+void LP100AProtocol::dispatchQueued() {
+    if (m_awaitingResponse || m_commandQueue.isEmpty())
+        return;
+    // A/F are fire-and-forget — the device sends no reply, so we don't arm the
+    // response watchdog here. Mark the line busy (blocks poll ticks), then after
+    // a short settle delay poll to read the new state. Issued only on an idle line.
+    m_transport->write(m_commandQueue.dequeue());
+    m_awaitingResponse = true;
+    m_commandTimer.start(Style::Protocol::CommandDelayMs);
 }
 
 void LP100AProtocol::onDataReceived(const QByteArray &data) {
     m_buffer.append(data);
 
+    bool consumedLine = false;
     while (true) {
         int semiIdx = m_buffer.indexOf(';');
         if (semiIdx < 0) {
@@ -154,12 +181,44 @@ void LP100AProtocol::onDataReceived(const QByteArray &data) {
 
         emit rawResponse(QString::fromLatin1(line));
         parseResponse(line);
+        consumedLine = true;
+    }
+
+    // A complete response was framed → the serial line is now idle. Disarm the
+    // watchdog and flush any queued user command immediately, so commands are
+    // written only between responses and never collide with one in flight.
+    if (consumedLine) {
+        m_awaitingResponse = false;
+        m_responseTimeout.stop();
+        dispatchQueued();
     }
 }
 
 void LP100AProtocol::onPollTimer() {
+    if (!m_transport->isOpen())
+        return;
+    if (m_awaitingResponse)
+        return;  // Line busy: skip this tick rather than stacking a second "P"
+    poll();
+}
+
+void LP100AProtocol::onResponseTimeout() {
+    // No reply arrived within the watchdog window. Unstick the line so the
+    // poll loop and command queue can't deadlock on a silent device.
+    m_awaitingResponse = false;
+    emit responseTimedOut();
+    dispatchQueued();
+}
+
+void LP100AProtocol::onCommandSettle() {
+    // The device has had time to process the A/F command. The line is still
+    // marked busy (m_awaitingResponse stayed true); poll now to read the new
+    // state — poll() re-arms the response watchdog, and onDataReceived clears
+    // the busy flag and flushes the next queued command when the reply lands.
     if (m_transport->isOpen())
         poll();
+    else
+        m_awaitingResponse = false;
 }
 
 bool LP100AProtocol::parseResponse(const QByteArray &line) {

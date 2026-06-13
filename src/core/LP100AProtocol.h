@@ -3,7 +3,10 @@
 #include <QString>
 #include <QObject>
 #include <QTimer>
+#include <QQueue>
+#include <QByteArray>
 #include "ITransport.h"
+#include "Style.h"
 
 struct LP100AData {
     double power = 0.0;
@@ -36,6 +39,7 @@ public:
     void startPolling(int intervalMs);
     void stopPolling();
     bool isPolling() const;
+    void setPollInterval(int intervalMs);  // Live interval change (no reconnect)
 
     // Commands
     void poll();
@@ -48,16 +52,27 @@ signals:
     void dataUpdated(const LP100AData &data);
     void rawResponse(const QString &response);
     void parseError(const QString &error);
+    void responseTimedOut();  // No reply within the watchdog window (device silent)
 
 private slots:
     void onDataReceived(const QByteArray &data);
     void onPollTimer();
+    void onResponseTimeout();
+    void onCommandSettle();  // After A/F settle delay, poll to read the new device state
 
 private:
     bool parseResponse(const QByteArray &line);
+    void writeToLine(const QByteArray &bytes);  // Central write: marks line busy + arms watchdog
+    void enqueueCommand(const QByteArray &cmd);
+    void dispatchQueued();                       // Send next queued command if the line is idle
 
     ITransport *m_transport;
     QTimer m_pollTimer;
+    QTimer m_responseTimeout;            // Single owned, cancelable watchdog
+    QTimer m_commandTimer;               // Settle delay between an A/F command and its follow-up poll
     LP100AData m_lastData;
     QByteArray m_buffer;
+    QQueue<QByteArray> m_commandQueue;   // Pending user commands ("A","F"), FIFO
+    bool m_awaitingResponse = false;     // A write is outstanding → serial line busy
+    int m_pollIntervalMs = Style::Protocol::DefaultPollMs;  // Cached for live edit + watchdog
 };
