@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QPushButton>
+#include <QTimer>
 #include "core/ITransport.h"
 #include "core/LP100AProtocol.h"
 #include "core/HamlibRig.h"
@@ -23,9 +24,11 @@ public:
 private slots:
     void onDataUpdated(const LP100AData &data);
     void onConnectionChanged(bool connected);
+    void onTransportError(const QString &err);
     void onRawResponse(const QString &resp);
     void onParseError(const QString &err);
     void onResponseTimedOut();
+    void attemptReconnect();
 
     void showSettingsDialog();
     void connectFromMenu();
@@ -48,6 +51,10 @@ private:
     void updatePowerRange(int rangeCode);
     void applyViewStyle();
     void debugLog(const QString &msg);
+
+    void rebuildPipeline();        // Tear down and recreate transport+protocol for the current endpoint
+    void scheduleReconnect();      // Arm the backoff timer for another reconnect attempt
+    QString endpointString() const;
 
     ITransport *m_transport = nullptr;
     LP100AProtocol *m_protocol = nullptr;
@@ -103,4 +110,10 @@ private:
     bool m_silent = false;  // True while connected but device not responding (amber status)
     bool m_debugLogging = false;
     QFile *m_debugFile = nullptr;
+
+    // --- Connection resilience / auto-reconnect supervisor ---
+    QTimer m_reconnectTimer;          // Single-shot backoff timer between reconnect attempts
+    bool m_connectIntended = false;   // User wants to be connected → drives auto-reconnect + launch restore
+    int  m_reconnectAttempts = 0;     // Consecutive failed attempts → exponential backoff exponent
+    int  m_consecutiveTimeouts = 0;   // Back-to-back poll timeouts → detect sustained (half-open) silence
 };

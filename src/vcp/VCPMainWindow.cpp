@@ -33,6 +33,9 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
         m_rigStatusLabel->setText("Rig: " + err);
     });
 
+    m_reconnectTimer.setSingleShot(true);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, &VCPMainWindow::attemptReconnect);
+
     createUI();
     createMenus();
     loadSettings();
@@ -52,6 +55,7 @@ VCPMainWindow::VCPMainWindow(QWidget *parent)
 
 VCPMainWindow::~VCPMainWindow() {
     disconnect(this);
+    m_reconnectTimer.stop();
     saveSettings();
     if (m_protocol) m_protocol->stopPolling();
     if (m_transport && m_transport->isOpen()) m_transport->close();
@@ -393,9 +397,10 @@ void VCPMainWindow::showSettingsDialog() {
     SWRGauge::setDebugEnabled(m_debugLogging);
     saveSettings();
 
-    // Apply changes. If not connected, settings just take effect on next Connect.
-    const bool connected = m_transport && m_transport->isOpen();
-    if (!connected)
+    // Apply changes. "Active" means connected OR mid-reconnect — either way an
+    // endpoint change must re-target. If idle, settings take effect on next Connect.
+    const bool active = m_connectIntended && m_transport;
+    if (!active)
         return;
 
     const bool endpointChanged = (m_useTcp != oldUseTcp)
@@ -410,6 +415,18 @@ void VCPMainWindow::showSettingsDialog() {
 }
 
 void VCPMainWindow::connectToDevice() {
+    // User-initiated (or endpoint-change) connect: build a fresh pipeline and
+    // reset all reconnect bookkeeping, then dial.
+    m_connectIntended = true;
+    m_reconnectAttempts = 0;
+    m_consecutiveTimeouts = 0;
+    m_reconnectTimer.stop();
+    rebuildPipeline();
+    if (!m_transport->open())
+        m_statusLabel->setText("Failed to connect");
+}
+
+void VCPMainWindow::rebuildPipeline() {
     if (m_protocol) {
         disconnect(m_protocol, nullptr, this, nullptr);
         m_protocol->stopPolling();
@@ -436,32 +453,88 @@ void VCPMainWindow::connectToDevice() {
 
     m_protocol = new LP100AProtocol(m_transport, this);
     connect(m_transport, &ITransport::connectionChanged, this, &VCPMainWindow::onConnectionChanged);
-    connect(m_transport, &ITransport::errorOccurred, this, [this](const QString &err) {
-        m_statusLabel->setText("Error: " + err);
-    });
+    connect(m_transport, &ITransport::errorOccurred, this, &VCPMainWindow::onTransportError);
     connect(m_protocol, &LP100AProtocol::dataUpdated, this, &VCPMainWindow::onDataUpdated);
     connect(m_protocol, &LP100AProtocol::rawResponse, this, &VCPMainWindow::onRawResponse);
     connect(m_protocol, &LP100AProtocol::parseError, this, &VCPMainWindow::onParseError);
     connect(m_protocol, &LP100AProtocol::responseTimedOut, this, &VCPMainWindow::onResponseTimedOut);
 
-    // Update plot widget with the protocol reference
+    // Hand the (now stable) protocol to the plot widget. The pipeline is rebuilt
+    // only on a user connect or endpoint change — never on auto-reconnect — so
+    // this pointer stays valid for a running sweep across reconnects.
     if (auto *pw = qobject_cast<PlotWidget *>(m_plotWindow))
         pw->setLP100A(m_protocol);
+}
 
-    if (!m_transport->open()) {
-        m_statusLabel->setText("Failed to connect");
+void VCPMainWindow::attemptReconnect() {
+    // Reuse the existing transport/protocol. TcpTransport/SerialTransport::open()
+    // aborts any half-open socket and re-dials, so the protocol pointer (held by
+    // the plot window too) never changes here.
+    if (!m_connectIntended || !m_transport)
+        return;
+    m_transport->open();
+}
+
+void VCPMainWindow::scheduleReconnect() {
+    if (!m_connectIntended)
+        return;                        // User asked to be disconnected — don't fight it
+    if (m_reconnectTimer.isActive())
+        return;                        // An attempt is already queued
+
+    if (m_protocol)
+        m_protocol->stopPolling();     // Stop hammering a dead line while we wait
+
+    // Exponential backoff, capped. The shift is guarded so a long outage can't
+    // overflow the exponent; the delay is clamped to the ceiling regardless.
+    int delay = Style::Protocol::ReconnectBackoffMaxMs;
+    if (m_reconnectAttempts < 20) {
+        const long long d = static_cast<long long>(Style::Protocol::ReconnectBackoffBaseMs)
+                            << m_reconnectAttempts;
+        delay = static_cast<int>(qMin<long long>(d, Style::Protocol::ReconnectBackoffMaxMs));
+        ++m_reconnectAttempts;
     }
+
+    m_silent = true;
+    m_statusLabel->setText(QString("LP-100A: %1 — reconnecting…").arg(endpointString()));
+    m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusAmber));
+    m_reconnectTimer.start(delay);
 }
 
 void VCPMainWindow::disconnectFromDevice() {
+    m_connectIntended = false;
+    m_reconnectTimer.stop();
+    m_reconnectAttempts = 0;
+    m_consecutiveTimeouts = 0;
     if (m_protocol) m_protocol->stopPolling();
     if (m_transport) m_transport->close();
     updateConnectionUI(false);
 }
 
 void VCPMainWindow::onConnectionChanged(bool connected) {
-    updateConnectionUI(connected);
-    if (connected && m_protocol) m_protocol->startPolling(m_pollInterval);
+    if (connected) {
+        // Link is up — clear backoff state and resume polling.
+        m_reconnectAttempts = 0;
+        m_consecutiveTimeouts = 0;
+        m_silent = false;
+        m_reconnectTimer.stop();
+        updateConnectionUI(true);
+        if (m_protocol) m_protocol->startPolling(m_pollInterval);
+    } else {
+        // Unexpected drop (peer FIN, keepalive timeout, serial unplug). If the
+        // user still wants the connection, auto-reconnect with backoff.
+        updateConnectionUI(false);
+        if (m_connectIntended)
+            scheduleReconnect();
+    }
+}
+
+void VCPMainWindow::onTransportError(const QString &err) {
+    m_statusLabel->setText("Error: " + err);
+    // A transport error that left the link down (failed/timed-out dial, broken
+    // socket) means we should retry on backoff. Transient errors that didn't
+    // drop the connection are left alone.
+    if (m_connectIntended && (!m_transport || !m_transport->isOpen()))
+        scheduleReconnect();
 }
 
 void VCPMainWindow::updateConnectionUI(bool connected) {
@@ -469,9 +542,7 @@ void VCPMainWindow::updateConnectionUI(bool connected) {
     m_disconnectAction->setEnabled(connected);
     if (!connected) m_silent = false;
     if (connected) {
-        QString text = m_useTcp ? QString("LP-100A: %1:%2").arg(m_tcpHost).arg(m_tcpPort)
-                                : QString("LP-100A: %1").arg(m_serialPort);
-        m_statusLabel->setText(text);
+        m_statusLabel->setText(QString("LP-100A: %1").arg(endpointString()));
         m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusGreen));
     } else {
         m_statusLabel->setText("Disconnected");
@@ -479,10 +550,15 @@ void VCPMainWindow::updateConnectionUI(bool connected) {
     }
 }
 
+QString VCPMainWindow::endpointString() const {
+    return m_useTcp ? QString("%1:%2").arg(m_tcpHost).arg(m_tcpPort) : m_serialPort;
+}
+
 // --- Data handling ---
 
 void VCPMainWindow::onDataUpdated(const LP100AData &data) {
-    // Device is responding again — restore the green connected status.
+    // Device is responding — clear silence bookkeeping and restore green status.
+    m_consecutiveTimeouts = 0;
     if (m_silent) {
         m_silent = false;
         updateConnectionUI(true);
@@ -584,13 +660,23 @@ void VCPMainWindow::debugLog(const QString &msg) {
 void VCPMainWindow::onParseError(const QString &err) { m_statusLabel->setText("Parse error: " + err); }
 
 void VCPMainWindow::onResponseTimedOut() {
-    // Transport is connected but the LP-100A isn't answering polls — flag amber
-    // instead of leaving a misleading green "connected" status.
-    if (m_silent) return;  // Already flagged; don't restyle on every timeout
-    m_silent = true;
-    QString endpoint = m_useTcp ? QString("%1:%2").arg(m_tcpHost).arg(m_tcpPort) : m_serialPort;
-    m_statusLabel->setText(QString("LP-100A: %1 — no response").arg(endpoint));
-    m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusAmber));
+    // A poll went unanswered. Brief gaps get a yellow "no response" flag. But
+    // sustained silence means the link is dead even though the socket still
+    // reports connected — the classic half-open bridge case — so tear it down
+    // and reconnect rather than sitting amber forever.
+    const int threshold = qMax(1, Style::Protocol::SilenceBeforeReconnectMs / qMax(1, m_pollInterval));
+    if (++m_consecutiveTimeouts < threshold) {
+        if (!m_silent) {
+            m_silent = true;
+            m_statusLabel->setText(QString("LP-100A: %1 — no response").arg(endpointString()));
+            m_statusLabel->setStyleSheet(QString("color: %1;").arg(Style::Color::StatusAmber));
+        }
+        return;
+    }
+    // Link presumed dead: scheduleReconnect() stops polling and arms the backoff
+    // timer; the attempt aborts the half-open socket and re-dials.
+    m_consecutiveTimeouts = 0;
+    scheduleReconnect();
 }
 
 void VCPMainWindow::onRangeClicked() {
@@ -622,7 +708,9 @@ void VCPMainWindow::saveSettings() {
     s.setValue("tcp/port", m_tcpPort);
     s.setValue("poll/interval", m_pollInterval);
     s.setValue("connection/useTcp", m_useTcp);
-    s.setValue("connection/wasConnected", m_transport && m_transport->isOpen());
+    // Persist intent, not the momentary socket state, so a quit during a drop or
+    // reconnect backoff still restores the connection on next launch.
+    s.setValue("connection/wasConnected", m_connectIntended);
     s.setValue("view/style", static_cast<int>(m_viewStyle));
     s.setValue("window/geometry", saveGeometry());
 }

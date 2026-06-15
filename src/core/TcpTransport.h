@@ -1,7 +1,9 @@
 #pragma once
 
 #include "ITransport.h"
+#include "Style.h"
 #include <QTcpSocket>
+#include <QTimer>
 
 class TcpTransport : public ITransport {
     Q_OBJECT
@@ -23,9 +25,13 @@ private slots:
     void onConnected();
     void onDisconnected();
     void onError(QAbstractSocket::SocketError error);
+    void onConnectTimeout();
 
 private:
+    void enableKeepAlive();   // OS-level dead-peer detection so a half-open socket is dropped in seconds
+
     QTcpSocket m_socket;
+    QTimer m_connectTimer;    // Bounds a connect attempt — open() is non-blocking and would otherwise never fail
     QString m_host;
-    quint16 m_port = 10001; // Lantronix default
+    quint16 m_port = Style::Protocol::DefaultTcpPort;
 };

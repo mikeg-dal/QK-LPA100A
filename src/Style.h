@@ -163,6 +163,15 @@ namespace Protocol {
     constexpr const char *DefaultTcpHost = "192.168.1.100";
     constexpr int CommandDelayMs = 150;  // Settle delay after A/F before polling for new state (device needs time)
     constexpr int ResponseTimeoutMarginMs = 200;  // Watchdog grace beyond poll interval before flagging device silent
+
+    // --- Connection resilience (TCP half-open detection + auto-reconnect) ---
+    constexpr int TcpConnectTimeoutMs      = 5000;   // Abort a dial that never completes (bridge unreachable or holding a stale session)
+    constexpr int TcpKeepAliveIdleSec      = 5;      // Seconds of idle before the OS starts keepalive probes
+    constexpr int TcpKeepAliveIntervalSec  = 2;      // Seconds between keepalive probes
+    constexpr int TcpKeepAliveCount        = 3;      // Drop the socket after this many unanswered probes
+    constexpr int SilenceBeforeReconnectMs = 3000;   // Sustained poll silence before treating a still-"connected" link as dead
+    constexpr int ReconnectBackoffBaseMs   = 1000;   // First auto-reconnect delay (doubles each consecutive failure)
+    constexpr int ReconnectBackoffMaxMs    = 30000;  // Ceiling on the exponential reconnect backoff
 }
 
 // =============================================================================
